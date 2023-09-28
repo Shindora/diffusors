@@ -19,7 +19,7 @@ dependencies:
     - torch
     - torchvision 
     - torchaudio
-    - transformers
+    - transformetors
     - pytorch-lightning
     - wandb
     - torchmetrics

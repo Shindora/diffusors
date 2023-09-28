@@ -5,6 +5,8 @@ from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn.functional as F
 import wandb
+# Finish the current wandb run if any
+wandb.finish()
 wandb.login()
 
 import torchvision
@@ -369,14 +371,14 @@ class DDMMLightningModule(LightningModule):
     ):
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
 
-        noise_p = torch.randn_like(image)
-        noise_u = torch.randn_like(unsup)
+        noise_p = torch.randn_like(image).to(torch.float32)
+        noise_u = torch.randn_like(unsup).to(torch.float32)
         t_p = torch.randint(
             0, self.num_timesteps, (self.batch_size,), device=self.device
-        ).long()
+        ).long().to(torch.float32)
         t_u = torch.randint(
             0, self.num_timesteps, (self.batch_size,), device=self.device
-        ).long()
+        ).long().to(torch.float32)
         loss_image = self.diffusion_image.forward(
             torch.cat([image, unsup], dim=0),
             torch.cat([t_p, t_u], dim=0),
@@ -615,7 +617,7 @@ if __name__ == "__main__":
         ],
         # accumulate_grad_batches=4,
         # strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        precision=16,  # if hparams.use_amp else 32,
+        precision=32,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
