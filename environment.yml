@@ -27,3 +27,5 @@ dependencies:
     - datasets
     - monai
     - kaggle
+    - einops
+    - ema-pytorch

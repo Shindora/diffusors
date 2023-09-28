@@ -5,17 +5,18 @@ from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn.functional as F
 import wandb
+wandb.login()
 
 import torchvision
 
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.seed import seed_everything
+
 
 import monai
 from monai.data import Dataset, CacheDataset, DataLoader
@@ -47,7 +48,8 @@ from monai.transforms import (
 # from data import CustomDataModule
 from model import *
 
-
+def select_fn(x):
+    return x > 0
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
         self,
@@ -177,7 +179,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
                 CropForegroundd(
                     keys=["image", "label", "unsup"],
                     source_key="image",
-                    select_fn=(lambda x: x > 0),
+                    select_fn=select_fn,
                     margin=0,
                 ),
                 ScaleIntensityd(
@@ -249,7 +251,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
                 CropForegroundd(
                     keys=["image", "label", "unsup"],
                     source_key="image",
-                    select_fn=(lambda x: x > 0),
+                    select_fn=select_fn,
                     margin=0,
                 ),
                 ScaleIntensityd(
@@ -328,6 +330,10 @@ class DDMMLightningModule(LightningModule):
             loss_type="L1",  # L1 or L2 or smooth L1
             objective="pred_noise",
         )
+        self.val_outputs = []
+        self.train_outputs = []
+        # Important: This property activates manual optimization.
+        self.automatic_optimization = False
 
     def configure_optimizers(self):
         # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -412,11 +418,17 @@ class DDMMLightningModule(LightningModule):
             info = {f"loss": loss_image + loss_label}
         return info
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        return self._common_step(batch, batch_idx, optimizer_idx, stage="train")
+    def training_step(self, batch, batch_idx):
+        opt = self.optimizers()
+        opt.zero_grad()
+        loss = self.compute_loss(batch)
+        self.manual_backward(loss)
+        opt.step()
 
     def validation_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, optimizer_idx=-1, stage="validation")
+        output = self._common_step(batch, batch_idx, optimizer_idx=-1, stage="validation")
+        self.val_outputs.append(output)
+        return output
 
     def test_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, optimizer_idx=-1, stage="test")
@@ -432,11 +444,13 @@ class DDMMLightningModule(LightningModule):
             sync_dist=True,
         )
 
-    def train_epoch_end(self, outputs):
-        return self._common_epoch_end(outputs, stage="train")
+    def on_train_epoch_end(self):
+        self._common_epoch_end(self.train_outputs, stage="train")
+        self.train_outputs = []
 
-    def validation_epoch_end(self, outputs):
-        return self._common_epoch_end(outputs, stage="validation")
+    def on_validation_epoch_end(self):
+        self._common_epoch_end(self.val_outputs, stage="validation")
+        self.val_outputs = []
 
     def test_epoch_end(self, outputs):
         return self._common_epoch_end(outputs, stage="test")
@@ -465,8 +479,11 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
+    parser.add_argument("--accelerator", type=str, default='mps', help="accelerator instances")
+    parser.add_argument("--devices", type=str, default='auto', help="number of devices")
+    parser.add_argument("--strategy", type=str, default='ddp', help="Strategy controls the model distribution across training")
 
-    parser = Trainer.add_argparse_args(parser)
+    # parser = Trainer.add_argparse_args(parser)
 
     # Collect the hyper parameters
     hparams = parser.parse_args()
@@ -583,12 +600,13 @@ if __name__ == "__main__":
     lr_callback = LearningRateMonitor(logging_interval="step")
     # Logger
     # Initialize wandb
-    wandb.init(project='diffusor', entity='ver1')
-    wandb_logger = TensorBoardLogger(save_dir=hparams.logsdir, log_model='all', project='diffusor')
+    wandb.init(project='cycle-consistent-DDMM', entity='diffusors')
+    wandb_logger = WandbLogger(save_dir=hparams.logsdir, log_model='all', project='diffusor')
 
     # Init model with callbacks
-    trainer = Trainer.from_argparse_args(
-        hparams,
+    trainer = Trainer(
+        devices=hparams.devices,
+        accelerator=hparams.accelerator,
         max_epochs=hparams.epochs,
         logger=[wandb_logger],
         callbacks=[
@@ -596,7 +614,7 @@ if __name__ == "__main__":
             checkpoint_callback,
         ],
         # accumulate_grad_batches=4,
-        strategy="fsdp",  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        # strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=16,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
