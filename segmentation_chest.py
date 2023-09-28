@@ -4,6 +4,7 @@ import glob
 from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn.functional as F
+import wandb
 
 import torchvision
 
@@ -11,7 +12,7 @@ from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.utilities.seed import seed_everything
@@ -472,12 +473,12 @@ if __name__ == "__main__":
     # Create data module
 
     train_image_dirs = [
-        os.path.join(hparams.datadir, "ChestXRLungSegmentation/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/ChinaSet/processed/images/"
+            hparams.datadir, "data/ChinaSet/processed/images/"
         ),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/Montgomery/processed/images/"
+            hparams.datadir, "data/Montgomery/processed/images/"
         ),
         # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'),
         # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'),
@@ -487,44 +488,44 @@ if __name__ == "__main__":
         # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'),
     ]
     train_label_dirs = [
-        os.path.join(hparams.datadir, "ChestXRLungSegmentation/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/ChinaSet/processed/labels/"
+            hparams.datadir, "data/ChinaSet/processed/labels/"
         ),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/Montgomery/processed/labels/"
+            hparams.datadir, "data/Montgomery/processed/labels/"
         ),
     ]
 
     train_unsup_dirs = [
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/VinDr/v1/processed/train/images/"
+            hparams.datadir, "data/VinDR/train/"
         ),
     ]
 
     val_image_dirs = [
-        os.path.join(hparams.datadir, "ChestXRLungSegmentation/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/ChinaSet/processed/images/"
+            hparams.datadir, "data/ChinaSet/processed/images/"
         ),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/Montgomery/processed/images/"
+            hparams.datadir, "data/Montgomery/processed/images/"
         ),
     ]
 
     val_label_dirs = [
-        os.path.join(hparams.datadir, "ChestXRLungSegmentation/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/ChinaSet/processed/labels/"
+            hparams.datadir, "data/ChinaSet/processed/labels/"
         ),
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/Montgomery/processed/labels/"
+            hparams.datadir, "data/Montgomery/processed/labels/"
         ),
     ]
 
     val_unsup_dirs = [
         os.path.join(
-            hparams.datadir, "ChestXRLungSegmentation/VinDr/v1/processed/test/images/"
+            hparams.datadir, "data/VinDR/test/"
         ),
     ]
     test_image_dirs = val_image_dirs
@@ -581,13 +582,15 @@ if __name__ == "__main__":
     )
     lr_callback = LearningRateMonitor(logging_interval="step")
     # Logger
-    tensorboard_logger = TensorBoardLogger(save_dir=hparams.logsdir, log_graph=True)
+    # Initialize wandb
+    wandb.init(project='diffusor', entity='ver1')
+    wandb_logger = TensorBoardLogger(save_dir=hparams.logsdir, log_model='all', project='diffusor')
 
     # Init model with callbacks
     trainer = Trainer.from_argparse_args(
         hparams,
         max_epochs=hparams.epochs,
-        logger=[tensorboard_logger],
+        logger=[wandb_logger],
         callbacks=[
             lr_callback,
             checkpoint_callback,
