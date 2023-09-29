@@ -426,11 +426,14 @@ class DDMMLightningModule(LightningModule):
         return info
 
     def training_step(self, batch, batch_idx):
-        opt = self.optimizers()
-        opt.zero_grad()
+        optimizers = self.optimizers()
+        for opt in optimizers:
+            opt.zero_grad()
         loss = self.compute_loss(batch)
         self.manual_backward(loss)
-        opt.step()
+        for opt in optimizers:
+            opt.step()
+
 
     def validation_step(self, batch, batch_idx):
         output = self._common_step(
