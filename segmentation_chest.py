@@ -5,6 +5,7 @@ from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn.functional as F
 import wandb
+
 # Finish the current wandb run if any
 wandb.finish()
 wandb.login()
@@ -50,8 +51,11 @@ from monai.transforms import (
 # from data import CustomDataModule
 from model import *
 
+
 def select_fn(x):
     return x > 0
+
+
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
         self,
@@ -373,12 +377,16 @@ class DDMMLightningModule(LightningModule):
 
         noise_p = torch.randn_like(image).to(torch.float32)
         noise_u = torch.randn_like(unsup).to(torch.float32)
-        t_p = torch.randint(
-            0, self.num_timesteps, (self.batch_size,), device=self.device
-        ).long().to(torch.float32)
-        t_u = torch.randint(
-            0, self.num_timesteps, (self.batch_size,), device=self.device
-        ).long().to(torch.float32)
+        t_p = (
+            torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device)
+            .long()
+            .to(torch.float32)
+        )
+        t_u = (
+            torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device)
+            .long()
+            .to(torch.float32)
+        )
         loss_image = self.diffusion_image.forward(
             torch.cat([image, unsup], dim=0),
             torch.cat([t_p, t_u], dim=0),
@@ -402,12 +410,9 @@ class DDMMLightningModule(LightningModule):
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
             )
-            tensorboard = self.logger.experiment
-            tensorboard.add_image(
-                f"{stage}_samples",
-                grid.clamp(0.0, 1.0),
-                self.current_epoch * self.batch_size + batch_idx,
-            )
+            wandb_log = self.logger.experiment
+            grid_permuted = grid.permute(1, 2, 0)
+            wandb_log.log({f"{stage}_samples": wandb.Image(grid_permuted.cpu().clamp(0.0, 1.0))})
 
         # loss = loss_image + loss_label
         # info = {"loss": loss}
@@ -428,7 +433,9 @@ class DDMMLightningModule(LightningModule):
         opt.step()
 
     def validation_step(self, batch, batch_idx):
-        output = self._common_step(batch, batch_idx, optimizer_idx=-1, stage="validation")
+        output = self._common_step(
+            batch, batch_idx, optimizer_idx=-1, stage="validation"
+        )
         self.val_outputs.append(output)
         return output
 
@@ -481,9 +488,16 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--accelerator", type=str, default='mps', help="accelerator instances")
-    parser.add_argument("--devices", type=str, default='auto', help="number of devices")
-    parser.add_argument("--strategy", type=str, default='ddp', help="Strategy controls the model distribution across training")
+    parser.add_argument(
+        "--accelerator", type=str, default="mps", help="accelerator instances"
+    )
+    parser.add_argument("--devices", type=str, default="auto", help="number of devices")
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="ddp",
+        help="Strategy controls the model distribution across training",
+    )
 
     # parser = Trainer.add_argparse_args(parser)
 
@@ -493,12 +507,8 @@ if __name__ == "__main__":
 
     train_image_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
-        os.path.join(
-            hparams.datadir, "data/ChinaSet/processed/images/"
-        ),
-        os.path.join(
-            hparams.datadir, "data/Montgomery/processed/images/"
-        ),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
         # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'),
         # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'),
         # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'),
@@ -508,44 +518,28 @@ if __name__ == "__main__":
     ]
     train_label_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
-        os.path.join(
-            hparams.datadir, "data/ChinaSet/processed/labels/"
-        ),
-        os.path.join(
-            hparams.datadir, "data/Montgomery/processed/labels/"
-        ),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     train_unsup_dirs = [
-        os.path.join(
-            hparams.datadir, "data/VinDR/train/"
-        ),
+        os.path.join(hparams.datadir, "data/VinDR/train/"),
     ]
 
     val_image_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
-        os.path.join(
-            hparams.datadir, "data/ChinaSet/processed/images/"
-        ),
-        os.path.join(
-            hparams.datadir, "data/Montgomery/processed/images/"
-        ),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
     ]
 
     val_label_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
-        os.path.join(
-            hparams.datadir, "data/ChinaSet/processed/labels/"
-        ),
-        os.path.join(
-            hparams.datadir, "data/Montgomery/processed/labels/"
-        ),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     val_unsup_dirs = [
-        os.path.join(
-            hparams.datadir, "data/VinDR/test/"
-        ),
+        os.path.join(hparams.datadir, "data/VinDR/test/"),
     ]
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
@@ -602,8 +596,10 @@ if __name__ == "__main__":
     lr_callback = LearningRateMonitor(logging_interval="step")
     # Logger
     # Initialize wandb
-    wandb.init(project='cycle-consistent-DDMM', entity='diffusors')
-    wandb_logger = WandbLogger(save_dir=hparams.logsdir, log_model='all', project='diffusor')
+    wandb.init(project="cycle-consistent-DDMM", entity="diffusors")
+    wandb_logger = WandbLogger(
+        save_dir=hparams.logsdir, log_model="all", project="diffusor"
+    )
 
     # Init model with callbacks
     trainer = Trainer(
