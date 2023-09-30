@@ -458,6 +458,7 @@ if __name__ == "__main__":
     # Init model with callbacks
     trainer = Trainer(
         accelerator=hparams.accelerator,
+        devices=hparams.devices,
         max_epochs=hparams.epochs,
         logger=[wandb_logger],
         callbacks=[
