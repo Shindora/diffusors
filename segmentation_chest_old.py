@@ -247,19 +247,20 @@ class DDMMLightningModule(LightningModule):
         )
 
     def configure_optimizers(self):
-        # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizers = [
-            torch.optim.RAdam([
-                {'params': self.diffusion_image.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
-            torch.optim.RAdam([
-                {'params': self.diffusion_label.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
-        ]
-        schedulers = [
-            torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=.01, total_iters=self.epochs),
-            torch.optim.lr_scheduler.LinearLR(optimizers[1], start_factor=1.0, end_factor=.01, total_iters=self.epochs)
-        ]
-        
-        return optimizers, schedulers
+            # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+            optimizers = [
+                torch.optim.RAdam([
+                    {'params': self.diffusion_image.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+                torch.optim.RAdam([
+                    {'params': self.diffusion_label.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+            ]
+            schedulers = [
+                torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=.01, total_iters=self.epochs),
+                torch.optim.lr_scheduler.LinearLR(optimizers[1], start_factor=1.0, end_factor=.01, total_iters=self.epochs)
+            ]
+            
+            return optimizers, schedulers
+
 
     def _common_step(self, batch, batch_idx, optimizer_idx, stage: Optional[str]='common'): 
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
@@ -454,8 +455,7 @@ if __name__ == "__main__":
     )
     # Init model with callbacks
     trainer = Trainer(
-        devices=hparams.devices,
-        accelerator=hparams.accelerator,
+        gpus=hparams.devices,
         max_epochs=hparams.epochs,
         logger=[wandb_logger],
         callbacks=[
@@ -463,12 +463,12 @@ if __name__ == "__main__":
             checkpoint_callback,
         ],
         # accumulate_grad_batches=4, 
-        strategy="fsdp", #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=16,  #if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
-        # auto_scale_batch_size=True, 
+        auto_scale_batch_size=True, 
         # gradient_clip_val=5, 
         # gradient_clip_algorithm='norm', #'norm', #'value'
         # track_grad_norm=2, 
