@@ -267,8 +267,11 @@ class DDMMLightningModule(LightningModule):
 
         noise_p = torch.randn_like(image)
         noise_u = torch.randn_like(unsup)
-        t_p = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
-        t_u = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+        # t_p = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+        # t_u = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+        t_p = torch.randint(0, self.num_timesteps, (image.shape[0],), device=self.device).long()
+        t_u = torch.randint(0, self.num_timesteps, (unsup.shape[0],), device=self.device).long()
+
         loss_image = self.diffusion_image.forward(torch.cat([image, unsup], dim=0), 
                                                   torch.cat([t_p, t_u], dim=0), 
                                                   torch.cat([noise_p, noise_u], dim=0))
