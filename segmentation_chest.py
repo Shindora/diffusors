@@ -4,13 +4,13 @@ import glob
 from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn.functional as F
+
+import torchvision
 import wandb
 
 # Finish the current wandb run if any
 wandb.finish()
 wandb.login()
-
-import torchvision
 
 from argparse import ArgumentParser
 
@@ -20,50 +20,42 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-
-import monai
+import monai 
 from monai.data import Dataset, CacheDataset, DataLoader
 from monai.data import list_data_collate, decollate_batch
 from monai.utils import first, set_determinism, get_seed, MAX_SEED
 from monai.transforms import (
-    apply_transform,
+    apply_transform, 
     Randomizable,
     AddChanneld,
-    Compose,
-    OneOf,
-    LoadImaged,
+    Compose, 
+    OneOf, 
+    LoadImaged, 
     Spacingd,
-    Orientationd,
-    DivisiblePadd,
-    RandFlipd,
-    RandZoomd,
+    Orientationd, 
+    DivisiblePadd, 
+    RandFlipd, 
+    RandZoomd, 
     RandAffined,
-    RandScaleCropd,
+    RandScaleCropd, 
     CropForegroundd,
-    Resized,
-    Rotate90d,
-    HistogramNormalized,
+    Resized, Rotate90d, HistogramNormalized,
     ScaleIntensityd,
-    ScaleIntensityRanged,
+    ScaleIntensityRanged, 
     ToTensord,
 )
-
 # from data import CustomDataModule
 from model import *
-
-
-def select_fn(x):
-    return x > 0
-
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
         self,
-        keys: Sequence,
-        data: Sequence,
+        keys: Sequence, 
+        data: Sequence, 
         transform: Optional[Callable] = None,
-        length: Optional[Callable] = None,
-        batch_size: int = 32,
+        length: Optional[Callable] = None, 
+        batch_size: int = 32, 
+
     ) -> None:
         self.keys = keys
         self.data = data
@@ -74,41 +66,39 @@ class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomiz
     def __len__(self) -> int:
         if self.length is None:
             return min((len(dataset) for dataset in self.data))
-        else:
+        else: 
             return self.length
 
     def _transform(self, index: int):
         data = {}
         self.R.seed(index)
         # for key, dataset in zip(self.keys, self.data):
-        #     rand_idx = self.R.randint(0, len(dataset))
+        #     rand_idx = self.R.randint(0, len(dataset)) 
         #     data[key] = dataset[rand_idx]
-        rand_idx = self.R.randint(0, len(self.data[0]))
-        data[self.keys[0]] = self.data[0][rand_idx]  # image
-        data[self.keys[1]] = self.data[1][rand_idx]  # label
-        rand_idy = self.R.randint(0, len(self.data[2]))
-        data[self.keys[2]] = self.data[2][rand_idy]  # unsup
+        rand_idx = self.R.randint(0, len(self.data[0])) 
+        data[self.keys[0]] = self.data[0][rand_idx] # image
+        data[self.keys[1]] = self.data[1][rand_idx] # label
+        rand_idy = self.R.randint(0, len(self.data[2])) 
+        data[self.keys[2]] = self.data[2][rand_idy] # unsup
 
         if self.transform is not None:
             data = apply_transform(self.transform, data)
 
         return data
 
-
 class PairedAndUnsupervisedDataModule(LightningDataModule):
-    def __init__(
-        self,
-        train_image_dirs: str = "path/to/dir",
-        train_label_dirs: str = "path/to/dir",
-        train_unsup_dirs: str = "path/to/dir",
-        val_image_dirs: str = "path/to/dir",
-        val_label_dirs: str = "path/to/dir",
-        val_unsup_dirs: str = "path/to/dir",
-        test_image_dirs: str = "path/to/dir",
-        test_label_dirs: str = "path/to/dir",
-        test_unsup_dirs: str = "path/to/dir",
+    def __init__(self, 
+        train_image_dirs: str = "path/to/dir", 
+        train_label_dirs: str = "path/to/dir", 
+        train_unsup_dirs: str = "path/to/dir", 
+        val_image_dirs: str = "path/to/dir", 
+        val_label_dirs: str = "path/to/dir", 
+        val_unsup_dirs: str = "path/to/dir", 
+        test_image_dirs: str = "path/to/dir", 
+        test_label_dirs: str = "path/to/dir", 
+        test_unsup_dirs: str = "path/to/dir", 
         shape: int = 256,
-        batch_size: int = 32,
+        batch_size: int = 32, 
         train_samples: int = 4000,
         val_samples: int = 800,
         test_samples: int = 800,
@@ -117,7 +107,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
 
         self.batch_size = batch_size
         self.shape = shape
-        # self.setup()
+        # self.setup() 
         self.train_image_dirs = train_image_dirs
         self.train_label_dirs = train_label_dirs
         self.train_unsup_dirs = train_unsup_dirs
@@ -132,40 +122,26 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         self.test_samples = test_samples
 
         # self.setup()
-        def glob_files(folders: str = None, extension: str = "*.nii.gz"):
+        def glob_files(folders: str=None, extension: str='*.nii.gz'):
             assert folders is not None
-            paths = [
-                glob.glob(os.path.join(folder, extension), recursive=True)
-                for folder in folders
-            ]
+            paths = [glob.glob(os.path.join(folder, extension), recursive = True) for folder in folders]
             files = sorted([item for sublist in paths for item in sublist])
             print(len(files))
             print(files[:1])
             return files
+            
+        self.train_image_files = glob_files(folders=train_image_dirs, extension='**/*.png')
+        self.train_label_files = glob_files(folders=train_label_dirs, extension='**/*.png')
+        self.train_unsup_files = glob_files(folders=train_unsup_dirs, extension='**/*.png')
+        self.val_image_files = glob_files(folders=val_image_dirs, extension='**/*.png')
+        self.val_label_files = glob_files(folders=val_label_dirs, extension='**/*.png')
+        self.val_unsup_files = glob_files(folders=val_unsup_dirs, extension='**/*.png')
+        self.test_image_files = glob_files(folders=test_image_dirs, extension='**/*.png')
+        self.test_label_files = glob_files(folders=test_label_dirs, extension='**/*.png')
+        self.test_unsup_files = glob_files(folders=test_unsup_dirs, extension='**/*.png')
 
-        self.train_image_files = glob_files(
-            folders=train_image_dirs, extension="**/*.png"
-        )
-        self.train_label_files = glob_files(
-            folders=train_label_dirs, extension="**/*.png"
-        )
-        self.train_unsup_files = glob_files(
-            folders=train_unsup_dirs, extension="**/*.png"
-        )
-        self.val_image_files = glob_files(folders=val_image_dirs, extension="**/*.png")
-        self.val_label_files = glob_files(folders=val_label_dirs, extension="**/*.png")
-        self.val_unsup_files = glob_files(folders=val_unsup_dirs, extension="**/*.png")
-        self.test_image_files = glob_files(
-            folders=test_image_dirs, extension="**/*.png"
-        )
-        self.test_label_files = glob_files(
-            folders=test_label_dirs, extension="**/*.png"
-        )
-        self.test_unsup_files = glob_files(
-            folders=test_unsup_dirs, extension="**/*.png"
-        )
 
-    def setup(self, seed: int = 42, stage: Optional[str] = None):
+    def setup(self, seed: int=42, stage: Optional[str]=None):
         # make assignments here (val/train/test split)
         # called on every process in DDP
         set_determinism(seed=seed)
@@ -174,69 +150,30 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         self.train_transforms = Compose(
             [
                 LoadImaged(keys=["image", "label", "unsup"]),
-                AddChanneld(
-                    keys=["image", "label", "unsup"],
-                ),
-                HistogramNormalized(
-                    keys=["image", "unsup"],
-                    min=0.0,
-                    max=1.0,
-                ),
-                CropForegroundd(
-                    keys=["image", "label", "unsup"],
-                    source_key="image",
-                    select_fn=select_fn,
-                    margin=0,
-                ),
-                ScaleIntensityd(
-                    keys=["image", "label", "unsup"],
-                    minv=0.0,
-                    maxv=1.0,
-                ),
-                # RandZoomd(keys=["image", "label", "unsup"], prob=1.0, min_zoom=0.9, max_zoom=1.1, padding_mode='constant', mode=["area", "nearest", "area"]),
-                RandAffined(
-                    keys=["image", "label", "unsup"],
-                    prob=1.0,
-                    rotate_range=0.1,
-                    translate_range=10,
-                    scale_range=0.1,
-                    padding_mode="zeros",
-                    mode=["bilinear", "nearest", "bilinear"],
-                ),
-                Resized(
-                    keys=["image", "label", "unsup"],
-                    spatial_size=256,
-                    size_mode="longest",
-                    mode=["area", "nearest", "area"],
-                ),
-                DivisiblePadd(
-                    keys=["image", "label", "unsup"],
-                    k=256,
-                    mode="constant",
-                    constant_values=0,
-                ),
-                ToTensord(
-                    keys=["image", "label", "unsup"],
-                ),
+                AddChanneld(keys=["image", "label", "unsup"],),
+                HistogramNormalized(keys=["image", "unsup"], min=0.0, max=1.0,),
+                CropForegroundd(keys=["image", "label", "unsup"], source_key="image", select_fn=(lambda x: x>0), margin=0),
+                ScaleIntensityd(keys=["image", "label", "unsup"], minv=0.0, maxv=1.0,),
+                # RandZoomd(keys=["image", "label", "unsup"], prob=1.0, min_zoom=0.9, max_zoom=1.1, padding_mode='constant', mode=["area", "nearest", "area"]), 
+                RandAffined(keys=["image", "label", "unsup"], prob=1.0, rotate_range=0.1, translate_range=10, scale_range=0.1, padding_mode='zeros', mode=["bilinear", "nearest", "bilinear"]), 
+                Resized(keys=["image", "label", "unsup"], spatial_size=256, size_mode="longest", mode=["area", "nearest", "area"]),
+                DivisiblePadd(keys=["image", "label", "unsup"], k=256, mode="constant", constant_values=0),
+                ToTensord(keys=["image", "label", "unsup"],),
             ]
         )
 
         self.train_datasets = PairedAndUnsupervisedDataset(
             keys=["image", "label", "unsup"],
-            data=[
-                self.train_image_files,
-                self.train_label_files,
-                self.train_unsup_files,
-            ],
+            data=[self.train_image_files, self.train_label_files, self.train_unsup_files], 
             transform=self.train_transforms,
             length=self.train_samples,
             batch_size=self.batch_size,
         )
 
         self.train_loader = DataLoader(
-            self.train_datasets,
-            batch_size=self.batch_size,
-            num_workers=16,
+            self.train_datasets, 
+            batch_size=self.batch_size, 
+            num_workers=16, 
             collate_fn=list_data_collate,
             shuffle=True,
         )
@@ -246,60 +183,32 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         self.val_transforms = Compose(
             [
                 LoadImaged(keys=["image", "label", "unsup"]),
-                AddChanneld(
-                    keys=["image", "label", "unsup"],
-                ),
-                HistogramNormalized(
-                    keys=["image", "unsup"],
-                    min=0.0,
-                    max=1.0,
-                ),
-                CropForegroundd(
-                    keys=["image", "label", "unsup"],
-                    source_key="image",
-                    select_fn=select_fn,
-                    margin=0,
-                ),
-                ScaleIntensityd(
-                    keys=["image", "label", "unsup"],
-                    minv=0.0,
-                    maxv=1.0,
-                ),
-                Resized(
-                    keys=["image", "label", "unsup"],
-                    spatial_size=256,
-                    size_mode="longest",
-                    mode=["area", "nearest", "area"],
-                ),
-                DivisiblePadd(
-                    keys=["image", "label", "unsup"],
-                    k=256,
-                    mode="constant",
-                    constant_values=0,
-                ),
-                ToTensord(
-                    keys=["image", "label", "unsup"],
-                ),
+                AddChanneld(keys=["image", "label", "unsup"],),
+                HistogramNormalized(keys=["image", "unsup"], min=0.0, max=1.0,),
+                CropForegroundd(keys=["image", "label", "unsup"], source_key="image", select_fn=(lambda x: x>0), margin=0),
+                ScaleIntensityd(keys=["image", "label", "unsup"], minv=0.0, maxv=1.0,),
+                Resized(keys=["image", "label", "unsup"], spatial_size=256, size_mode="longest", mode=["area", "nearest", "area"]),
+                DivisiblePadd(keys=["image", "label", "unsup"], k=256, mode="constant", constant_values=0),
+                ToTensord(keys=["image", "label", "unsup"],),
             ]
         )
 
         self.val_datasets = PairedAndUnsupervisedDataset(
             keys=["image", "label", "unsup"],
-            data=[self.val_image_files, self.val_label_files, self.val_unsup_files],
+            data=[self.val_image_files, self.val_label_files, self.val_unsup_files], 
             transform=self.val_transforms,
             length=self.val_samples,
             batch_size=self.batch_size,
         )
-
+        
         self.val_loader = DataLoader(
-            self.val_datasets,
-            batch_size=self.batch_size,
-            num_workers=8,
+            self.val_datasets, 
+            batch_size=self.batch_size, 
+            num_workers=8, 
             collate_fn=list_data_collate,
             shuffle=True,
         )
         return self.val_loader
-
 
 class DDMMLightningModule(LightningModule):
     def __init__(self, hparams, *kwargs) -> None:
@@ -324,148 +233,96 @@ class DDMMLightningModule(LightningModule):
         self.diffusion_image = GaussianDiffusion(
             model_image,
             image_size=hparams.shape,
-            timesteps=hparams.timesteps,  # number of steps
-            loss_type="L1",  # L1 or L2 or smooth L1,
-            objective="pred_x0",
+            timesteps=hparams.timesteps,   # number of steps
+            loss_type='L1', # L1 or L2 or smooth L1, 
+            objective='pred_x0',
         )
 
         self.diffusion_label = GaussianDiffusion(
             model_label,
             image_size=hparams.shape,
-            timesteps=hparams.timesteps,  # number of steps
-            loss_type="L1",  # L1 or L2 or smooth L1
-            objective="pred_noise",
+            timesteps=hparams.timesteps,   # number of steps
+            loss_type='L1', # L1 or L2 or smooth L1
+            objective='pred_noise',
         )
-        self.val_outputs = []
-        self.train_outputs = []
-        # Important: This property activates manual optimization.
-        self.automatic_optimization = False
 
     def configure_optimizers(self):
-        # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizers = [
-            torch.optim.RAdam(
-                [{"params": self.diffusion_image.parameters()}],
-                lr=1e0 * (self.lr or self.learning_rate),
-            ),
-            torch.optim.RAdam(
-                [{"params": self.diffusion_label.parameters()}],
-                lr=1e0 * (self.lr or self.learning_rate),
-            ),
-        ]
-        schedulers = [
-            torch.optim.lr_scheduler.LinearLR(
-                optimizers[0],
-                start_factor=1.0,
-                end_factor=0.01,
-                total_iters=self.epochs,
-            ),
-            torch.optim.lr_scheduler.LinearLR(
-                optimizers[1],
-                start_factor=1.0,
-                end_factor=0.01,
-                total_iters=self.epochs,
-            ),
-        ]
+            # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+            optimizers = [
+                torch.optim.RAdam([
+                    {'params': self.diffusion_image.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+                torch.optim.RAdam([
+                    {'params': self.diffusion_label.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+            ]
+            schedulers = [
+                torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=.01, total_iters=self.epochs),
+                torch.optim.lr_scheduler.LinearLR(optimizers[1], start_factor=1.0, end_factor=.01, total_iters=self.epochs)
+            ]
+            
+            return optimizers, schedulers
 
-        return optimizers, schedulers
 
-    def _common_step(
-        self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
-    ):
+    def _common_step(self, batch, batch_idx, optimizer_idx, stage: Optional[str]='common'): 
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
 
-        noise_p = torch.randn_like(image).to(torch.float32)
-        noise_u = torch.randn_like(unsup).to(torch.float32)
-        t_p = (
-            torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device)
-            .long()
-            .to(torch.float32)
-        )
-        t_u = (
-            torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device)
-            .long()
-            .to(torch.float32)
-        )
-        loss_image = self.diffusion_image.forward(
-            torch.cat([image, unsup], dim=0),
-            torch.cat([t_p, t_u], dim=0),
-            torch.cat([noise_p, noise_u], dim=0),
-        )
-        # loss_label = self.diffusion_label.forward(torch.cat([label, label], dim=0),
-        #                                           torch.cat([t_p, t_p], dim=0),
-        #                                           torch.cat([noise_p, noise_p], dim=0)) #(label, t_p, noise_p)
-        loss_label = self.diffusion_label.forward(label, t_p, noise_p)
-        if batch_idx == 0:
+        noise_p = torch.randn_like(image)
+        noise_u = torch.randn_like(unsup)
+        # t_p = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+        # t_u = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+        t_p = torch.randint(0, self.num_timesteps, (image.shape[0],), device=self.device).long()
+        t_u = torch.randint(0, self.num_timesteps, (unsup.shape[0],), device=self.device).long()
+
+        loss_image = self.diffusion_image.forward(torch.cat([image, unsup], dim=0), 
+                                                  torch.cat([t_p, t_u], dim=0), 
+                                                  torch.cat([noise_p, noise_u], dim=0))
+        # loss_label = self.diffusion_label.forward(torch.cat([label, label], dim=0), 
+        #                                           torch.cat([t_p, t_p], dim=0), 
+        #                                           torch.cat([noise_p, noise_p], dim=0)) #(label, t_p, noise_p)     
+        loss_label = self.diffusion_label.forward(label, 
+                                                  t_p, 
+                                                  noise_p)   
+        if batch_idx==0:
             noise_samples = torch.randn_like(unsup)
-            image_samples = self.diffusion_image.sample(
-                batch_size=self.batch_size, img=noise_samples
-            )
-            label_samples = self.diffusion_label.sample(
-                batch_size=self.batch_size, img=noise_samples
-            )
-            viz2d = torch.cat(
-                [image, label, image_samples, label_samples], dim=-1
-            ).transpose(2, 3)
-            grid = torchvision.utils.make_grid(
-                viz2d, normalize=False, scale_each=False, nrow=8, padding=0
-            )
+            image_samples = self.diffusion_image.sample(batch_size=self.batch_size, img=noise_samples)
+            label_samples = self.diffusion_label.sample(batch_size=self.batch_size, img=noise_samples)
+            viz2d = torch.cat([image, label, image_samples, label_samples], dim=-1).transpose(2, 3)
+            grid = torchvision.utils.make_grid(viz2d, normalize=False, scale_each=False, nrow=8, padding=0)
             wandb_log = self.logger.experiment
             grid_permuted = grid.permute(1, 2, 0)
             wandb_log.log({f"{stage}_samples": wandb.Image(grid_permuted.cpu().clamp(0.0, 1.0))})
-
-        # loss = loss_image + loss_label
+        
+        # loss = loss_image + loss_label                       
         # info = {"loss": loss}
-
-        if optimizer_idx == 0:  # forward picture
-            info = {f"loss": loss_image}
-        elif optimizer_idx == 1:  # forward density
-            info = {f"loss": loss_label}
+        
+        if optimizer_idx==0: # forward picture
+            info = {f'loss': loss_image} 
+        elif optimizer_idx==1: # forward density
+            info = {f'loss': loss_label}
         else:
-            info = {f"loss": loss_image + loss_label}
+            info = {f'loss': loss_image + loss_label }
         return info
 
-    def training_step(self, batch, batch_idx):
-        optimizers = self.optimizers()
-        for opt in optimizers:
-            opt.zero_grad()
-        loss = self.compute_loss(batch)
-        self.manual_backward(loss)
-        for opt in optimizers:
-            opt.step()
-
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        return self._common_step(batch, batch_idx, optimizer_idx, stage='train')
 
     def validation_step(self, batch, batch_idx):
-        output = self._common_step(
-            batch, batch_idx, optimizer_idx=-1, stage="validation"
-        )
-        self.val_outputs.append(output)
-        return output
+        return self._common_step(batch, batch_idx, optimizer_idx=-1, stage='validation')
 
     def test_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, optimizer_idx=-1, stage="test")
+        return self._common_step(batch, batch_idx, optimizer_idx=-1, stage='test')
 
-    def _common_epoch_end(self, outputs, stage: Optional[str] = "common"):
-        loss = torch.stack([x[f"loss"] for x in outputs]).mean()
-        self.log(
-            f"{stage}_loss_epoch",
-            loss,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+    def _common_epoch_end(self, outputs, stage: Optional[str]='common'):
+        loss = torch.stack([x[f'loss'] for x in outputs]).mean()
+        self.log(f'{stage}_loss_epoch', loss, on_step=False, prog_bar=True, logger=True, sync_dist=True)
 
-    def on_train_epoch_end(self):
-        self._common_epoch_end(self.train_outputs, stage="train")
-        self.train_outputs = []
+    def train_epoch_end(self, outputs):
+        return self._common_epoch_end(outputs, stage='train')
 
-    def on_validation_epoch_end(self):
-        self._common_epoch_end(self.val_outputs, stage="validation")
-        self.val_outputs = []
-
+    def validation_epoch_end(self, outputs):
+        return self._common_epoch_end(outputs, stage='validation')
+    
     def test_epoch_end(self, outputs):
-        return self._common_epoch_end(outputs, stage="test")
+        return self._common_epoch_end(outputs, stage='test')
 
 
 if __name__ == "__main__":
@@ -501,9 +358,7 @@ if __name__ == "__main__":
         default="ddp",
         help="Strategy controls the model distribution across training",
     )
-
-    # parser = Trainer.add_argparse_args(parser)
-
+    
     # Collect the hyper parameters
     hparams = parser.parse_args()
     # Create data module
@@ -549,20 +404,20 @@ if __name__ == "__main__":
     test_unsup_dirs = val_unsup_dirs
 
     datamodule = PairedAndUnsupervisedDataModule(
-        train_image_dirs=train_image_dirs,
-        train_label_dirs=train_label_dirs,
-        train_unsup_dirs=train_unsup_dirs,
-        val_image_dirs=val_image_dirs,
-        val_label_dirs=val_label_dirs,
-        val_unsup_dirs=val_unsup_dirs,
-        test_image_dirs=test_image_dirs,
-        test_label_dirs=test_label_dirs,
-        test_unsup_dirs=test_unsup_dirs,
-        train_samples=hparams.train_samples,
-        val_samples=hparams.val_samples,
-        test_samples=hparams.test_samples,
-        batch_size=hparams.batch_size,
-        shape=hparams.shape,
+        train_image_dirs = train_image_dirs, 
+        train_label_dirs = train_label_dirs, 
+        train_unsup_dirs = train_unsup_dirs, 
+        val_image_dirs = val_image_dirs, 
+        val_label_dirs = val_label_dirs, 
+        val_unsup_dirs = val_unsup_dirs, 
+        test_image_dirs = test_image_dirs, 
+        test_label_dirs = test_label_dirs, 
+        test_unsup_dirs = test_unsup_dirs, 
+        train_samples = hparams.train_samples,
+        val_samples = hparams.val_samples,
+        test_samples = hparams.test_samples,
+        batch_size = hparams.batch_size, 
+        shape = hparams.shape,
         # keys = ["image", "label", "unsup"]
     )
 
@@ -573,65 +428,61 @@ if __name__ == "__main__":
     #                       debug_data["label"], \
     #                       debug_data["unsup"]
     # print(image.shape, label.shape, unsup.shape)
-
+    
     ####### Test camera mu and bandwidth ########
     # test_random_uniform_cameras(hparams, datamodule)
     #############################################
 
-    model = DDMMLightningModule(hparams=hparams)
-    model = (
-        model.load_from_checkpoint(hparams.ckpt, strict=False)
-        if hparams.ckpt is not None
-        else model
+    model = DDMMLightningModule(
+        hparams = hparams
     )
+    model = model.load_from_checkpoint(hparams.ckpt, strict=False) if hparams.ckpt is not None else model
 
-    # Seed the application
+     # Seed the application
     seed_everything(42)
 
     # Callback
     checkpoint_callback = ModelCheckpoint(
         dirpath=hparams.logsdir,
-        filename="{epoch:02d}-{validation_loss_epoch:.2f}",
+        filename='{epoch:02d}-{validation_loss_epoch:.2f}',
         save_top_k=-1,
         save_last=True,
-        every_n_epochs=5,
+        every_n_epochs=5, 
     )
-    lr_callback = LearningRateMonitor(logging_interval="step")
+    lr_callback = LearningRateMonitor(logging_interval='step')
     # Logger
     # Initialize wandb
     wandb.init(project="cycle-consistent-DDMM", entity="diffusors")
     wandb_logger = WandbLogger(
         save_dir=hparams.logsdir, log_model="all", project="diffusor"
     )
-
     # Init model with callbacks
     trainer = Trainer(
-        devices=hparams.devices,
-        accelerator=hparams.accelerator,
+        gpus=hparams.devices,
         max_epochs=hparams.epochs,
         logger=[wandb_logger],
         callbacks=[
             lr_callback,
             checkpoint_callback,
         ],
-        # accumulate_grad_batches=4,
-        # strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        precision=32,  # if hparams.use_amp else 32,
+        # accumulate_grad_batches=4, 
+        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        precision=16,  #if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
-        # auto_scale_batch_size=True,
-        # gradient_clip_val=5,
+        auto_scale_batch_size=True, 
+        # gradient_clip_val=5, 
         # gradient_clip_algorithm='norm', #'norm', #'value'
-        # track_grad_norm=2,
-        # detect_anomaly=True,
-        # benchmark=None,
+        # track_grad_norm=2, 
+        # detect_anomaly=True, 
+        # benchmark=None, 
         # deterministic=False,
         # profiler="simple",
     )
 
     trainer.fit(
-        model,
+        model, 
         datamodule,
     )
 
