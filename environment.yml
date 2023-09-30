@@ -15,12 +15,11 @@ dependencies:
   - panel
   - pytest
   - pip:
+    - pytorch-lightning==1.9.5
     - click
     - torch
     - torchvision 
     - torchaudio
-    - transformers
-    - pytorch-lightning
     - wandb
     - torchmetrics
     - accelerate
@@ -29,3 +28,6 @@ dependencies:
     - kaggle
     - einops
     - ema-pytorch
+    - fairscale 
+    - deepspeed 
+    - horovod

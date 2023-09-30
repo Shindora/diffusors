@@ -267,8 +267,7 @@ class DDMMLightningModule(LightningModule):
 
         noise_p = torch.randn_like(image)
         noise_u = torch.randn_like(unsup)
-        # t_p = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
-        # t_u = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+
         t_p = torch.randint(0, self.num_timesteps, (image.shape[0],), device=self.device).long()
         t_u = torch.randint(0, self.num_timesteps, (unsup.shape[0],), device=self.device).long()
 
@@ -458,7 +457,7 @@ if __name__ == "__main__":
     )
     # Init model with callbacks
     trainer = Trainer(
-        gpus=hparams.devices,
+        accelerator=hparams.accelerator,
         max_epochs=hparams.epochs,
         logger=[wandb_logger],
         callbacks=[
