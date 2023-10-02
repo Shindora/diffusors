@@ -288,7 +288,7 @@ class DDMMLightningModule(LightningModule):
             grid = torchvision.utils.make_grid(viz2d, normalize=False, scale_each=False, nrow=8, padding=0)
             wandb_log = self.logger.experiment
             grid_permuted = grid.permute(1, 2, 0)
-            wandb_log.log({f"{stage}_samples": wandb.Image(grid_permuted.cpu().clamp(0.0, 1.0))})
+            wandb_log.log({f"{stage}_samples_epoch_{self.current_epoch}": wandb.Image(grid_permuted.cpu().clamp(0.0, 1.0))})
         
         # loss = loss_image + loss_label                       
         # info = {"loss": loss}
