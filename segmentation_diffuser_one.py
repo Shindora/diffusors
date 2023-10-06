@@ -7,15 +7,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import torchvision
+import wandb
 
+# Finish the current wandb run if any
+wandb.finish()
+wandb.login()
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.seed import seed_everything
+
 
 import monai 
 from monai.data import Dataset, CacheDataset, DataLoader

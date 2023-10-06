@@ -367,7 +367,7 @@ class DDMMLightningModule(LightningModule):
         return self._common_epoch_end(outputs, stage='test')
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20], gamma=0.1)
         return [optimizer], [scheduler]
 
