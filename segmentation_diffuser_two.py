@@ -357,8 +357,8 @@ class DDMMLightningModule(LightningModule):
 
         super_loss = self.loss_func(est_i, rng_p) \
                     + self.loss_func(est_l, rng_p) \
-                    + self.loss_func(pred_image_i, rng_p) \
-                    + self.loss_func(pred_label_i, rng_p)
+                    + self.loss_func(pred_image_i, image) \
+                    + self.loss_func(pred_label_i, label)
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
