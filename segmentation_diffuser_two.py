@@ -7,15 +7,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import torchvision
+import wandb
 
+# Finish the current wandb run if any
+wandb.finish()
+wandb.login()
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.seed import seed_everything
+
 
 import monai 
 from monai.data import Dataset, CacheDataset, DataLoader
@@ -331,8 +335,11 @@ class DDMMLightningModule(LightningModule):
            
             viz2d = torch.cat([image, label, sam_i, sam_l, unsup], dim=-1).transpose(2, 3)
             grid = torchvision.utils.make_grid(viz2d, normalize=False, scale_each=False, nrow=8, padding=0)
-            tensorboard = self.logger.experiment
-            tensorboard.add_image(f'{stage}_samples', grid.clamp(0., 1.), self.global_step // 10)
+
+            # Convert the PyTorch tensor to a PIL Image
+            grid_image = torchvision.transforms.ToPILImage()(grid.clamp(0., 1.))
+            wandb_log = self.logger.experiment
+            wandb_log.log({f'{stage}_samples': [wandb.Image(grid_image)]}, step=self.global_step // 10)
         
         info = {f'loss': loss} 
         return info
@@ -383,44 +390,59 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     
-    parser = Trainer.add_argparse_args(parser)
+    parser.add_argument(
+        "--accelerator", type=str, default="gpu", help="accelerator instances"
+    )
+    parser.add_argument("--devices", type=str, default="auto", help="number of devices")
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="ddp",
+        help="Strategy controls the model distribution across training",
+    )
+    parser.add_argument("--precision", type=str, default="bf16")
+    
+    # parser = Trainer.add_argparse_args(parser)
     
     # Collect the hyper parameters
     hparams = parser.parse_args()
     # Create data module
     
     train_image_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62022/20220501/raw/images'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/images'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/train/images/'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'), 
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
+        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'),
+        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/images'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/train/images/'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'),
     ]
     train_label_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/labels'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62022/20220501/raw/labels'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/labels'), 
-        
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     train_unsup_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/train/images/'), 
+        os.path.join(hparams.datadir, "data/VinDR/train/"),
     ]
 
     val_image_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62022/20220501/raw/images'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/images'), 
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
     ]
 
     val_label_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/labels'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62022/20220501/raw/labels'), 
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/labels'), 
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     val_unsup_dirs = [
-        os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'), 
+        os.path.join(hparams.datadir, "data/VinDR/test/"),
     ]
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
@@ -475,25 +497,27 @@ if __name__ == "__main__":
     )
     lr_callback = LearningRateMonitor(logging_interval='step')
     # Logger
-    tensorboard_logger = TensorBoardLogger(save_dir=hparams.logsdir, log_graph=True)
-
+    wandb.init(project="cycle-consistent-DDMM", entity="diffusors")
+    wandb_logger = WandbLogger(
+        save_dir=hparams.logsdir, log_model="all", project="diffusor"
+    )
     # Init model with callbacks
-    trainer = Trainer.from_argparse_args(
-        hparams, 
+    trainer = Trainer(
+        accelerator=hparams.accelerator,
+        devices=hparams.devices,
         max_epochs=hparams.epochs,
-        logger=[tensorboard_logger],
+        logger=[wandb_logger],
         callbacks=[
             lr_callback,
-            checkpoint_callback, 
+            checkpoint_callback,
         ],
         # accumulate_grad_batches=4, 
-        strategy="ddp_sharded", #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        # strategy="fsdp", #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        # precision=16,  #if hparams.use_amp else 32,
+        # strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        precision=hparams.precision,  #if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
-        # auto_scale_batch_size=True, 
+        auto_scale_batch_size=True, 
         # gradient_clip_val=5, 
         # gradient_clip_algorithm='norm', #'norm', #'value'
         # track_grad_norm=2, 

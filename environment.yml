@@ -31,3 +31,4 @@ dependencies:
     - fairscale 
     - deepspeed 
     - horovod
+    - diffusers

@@ -357,6 +357,7 @@ if __name__ == "__main__":
         default="ddp",
         help="Strategy controls the model distribution across training",
     )
+    parser.add_argument("--precision", type=str, default="bf16")
     
     # Collect the hyper parameters
     hparams = parser.parse_args()
@@ -467,7 +468,7 @@ if __name__ == "__main__":
         ],
         # accumulate_grad_batches=4, 
         strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        precision=16,  #if hparams.use_amp else 32,
+        precision=hparams.precision,  #if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
