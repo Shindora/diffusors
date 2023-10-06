@@ -514,7 +514,7 @@ class DDMMLightningModule(LightningModule):
                 sam_l = sam_l * 0.5 + 0.5
 
             viz2d = torch.cat([image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1).transpose(
-                2, 4
+                2, 3
             )
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
@@ -705,7 +705,7 @@ if __name__ == "__main__":
     # Logger
     wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
     wandb_logger = WandbLogger(
-        save_dir=hparams.logsdir, log_model="all", project="diffusor"
+        save_dir=hparams.logsdir, log_model=True, project="diffusor"
     )
     # Init model with callbacks
     trainer = Trainer(
