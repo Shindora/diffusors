@@ -453,7 +453,7 @@ if __name__ == "__main__":
         default="ddp",
         help="Strategy controls the model distribution across training",
     )
-    parser.add_argument("--precision", type=str, default="bf16")
+    parser.add_argument("--precision", type=int, default=32)
     
     # parser = Trainer.add_argparse_args(parser)
     
