@@ -317,7 +317,7 @@ class DDMMLightningModule(LightningModule):
         
         loss = super_loss + unsup_loss     
 
-        if stage == 'train' and batch_idx % 10 == 0:
+        if batch_idx == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -339,7 +339,7 @@ class DDMMLightningModule(LightningModule):
             # Convert the PyTorch tensor to a PIL Image
             grid_image = torchvision.transforms.ToPILImage()(grid.clamp(0., 1.))
             wandb_log = self.logger.experiment
-            wandb_log.log({f'{stage}_samples': [wandb.Image(grid_image)]}, step=self.global_step // 10)
+            wandb_log.log({f'{stage}_epoch_{self.current_epoch}_batch_{batch_idx}_samples': [wandb.Image(grid_image)]}, step=self.global_step // 10)
         
         info = {f'loss': loss} 
         return info
