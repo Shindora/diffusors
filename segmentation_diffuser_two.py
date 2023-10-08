@@ -438,8 +438,8 @@ class DDMMLightningModule(LightningModule):
 
         self.loss_functions = {
             "l1": nn.SmoothL1Loss(reduction="mean", beta=0.02),
-            "dice_score": Dice(average="micro"),
-            "rand_score": RandScore(),
+            "dice": Dice(average="micro"),
+            "rand": RandScore(),
             "kid": MinkowskiDistance(p=3),
             "ssim": MultiScaleStructuralSimilarityIndexMeasure(
                 gaussian_kernel=True, reduction="elementwise_mean"
@@ -504,23 +504,24 @@ class DDMMLightningModule(LightningModule):
             unsup_loss_dict[loss_name] = self.calculate_loss(est_u, rng_u, loss_name)
 
 
-        self.log(
-            f"{stage}_super_loss",
-            super_loss_dict.get('l1'),
-            on_step=(stage == "train"),
+        for loss_name, loss_value in super_loss_dict.items():
+            self.log(
+            f"{stage}_{loss_name}_super_loss",
+            loss_value,
+            on_step=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
-            batch_size=self.batch_size,
         )
-        self.log(
-            f"{stage}_unsup_loss",
-            unsup_loss_dict.get('l1'),
-            on_step=(stage == "train"),
+            
+        for loss_name, loss_value in unsup_loss_dict.items():
+            self.log(
+            f"{stage}_{loss_name}_unsup_loss",
+            loss_value,
+            on_step=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
-            batch_size=self.batch_size,
         )
 
         total_loss_dict = dict(Counter(super_loss_dict) + Counter(unsup_loss_dict))
@@ -562,24 +563,42 @@ class DDMMLightningModule(LightningModule):
         return total_loss_dict
 
     def training_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, optimizer_idx=0, stage="train")
+        return  self._common_step(batch, batch_idx, optimizer_idx=0, stage="train")
+
 
     def validation_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, optimizer_idx=0, stage="validation")
+        return  self._common_step(batch, batch_idx, optimizer_idx=0, stage="validation")
 
     def test_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, optimizer_idx=0, stage="test")
 
     def _common_epoch_end(self, outputs, stage: Optional[str] = "common"):
-        loss = torch.stack([x[f"loss"] for x in outputs]).mean()
-        self.log(
-            f"{stage}_loss_epoch",
-            loss,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        if stage in ['train', 'validation']:
+            loss = torch.stack([x[hparams.best_loss_fn] for x in outputs]).mean()
+            self.log(
+                f"{stage}_loss_epoch",
+                loss,
+                on_step=False,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )
+            return loss
+        else:
+            mean_dict = {}
+            for key in outputs[0].keys():
+                mean_dict[key] = torch.stack([x[key] for x in outputs]).mean()
+            for loss_name, loss_value in mean_dict.items():
+                self.log(
+                f"{stage}_{loss_name}_loss",
+                loss_value,
+                on_step=False,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )
+            
+            
 
     def train_epoch_end(self, outputs):
         return self._common_epoch_end(outputs, stage="train")
@@ -638,6 +657,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_model", type=bool, default=True, help="log mode in wandb"
     )
+    parser.add_argument("--best_loss_fn", type=str,default='dice', help="loss function need to optimize")
 
     # parser = Trainer.add_argparse_args(parser)
 
