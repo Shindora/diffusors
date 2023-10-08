@@ -10,11 +10,10 @@ import torchvision
 from argparse import ArgumentParser
 from tqdm import tqdm
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.seed import seed_everything
 
 from generative.inferers import DiffusionInferer
 from generative.networks.nets import DiffusionModelUNet

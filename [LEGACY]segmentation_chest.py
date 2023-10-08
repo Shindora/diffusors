@@ -6,15 +6,19 @@ import torch
 import torch.nn.functional as F
 
 import torchvision
+import wandb
+
+# Finish the current wandb run if any
+wandb.finish()
+wandb.login()
 
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.seed import seed_everything
 
 import monai 
 from monai.data import Dataset, CacheDataset, DataLoader
@@ -243,27 +247,30 @@ class DDMMLightningModule(LightningModule):
         )
 
     def configure_optimizers(self):
-        # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizers = [
-            torch.optim.RAdam([
-                {'params': self.diffusion_image.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
-            torch.optim.RAdam([
-                {'params': self.diffusion_label.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
-        ]
-        schedulers = [
-            torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=.01, total_iters=self.epochs),
-            torch.optim.lr_scheduler.LinearLR(optimizers[1], start_factor=1.0, end_factor=.01, total_iters=self.epochs)
-        ]
-        
-        return optimizers, schedulers
+            # return torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+            optimizers = [
+                torch.optim.RAdam([
+                    {'params': self.diffusion_image.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+                torch.optim.RAdam([
+                    {'params': self.diffusion_label.parameters()}], lr=1e0*(self.lr or self.learning_rate)), \
+            ]
+            schedulers = [
+                torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=.01, total_iters=self.epochs),
+                torch.optim.lr_scheduler.LinearLR(optimizers[1], start_factor=1.0, end_factor=.01, total_iters=self.epochs)
+            ]
+            
+            return optimizers, schedulers
+
 
     def _common_step(self, batch, batch_idx, optimizer_idx, stage: Optional[str]='common'): 
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
 
         noise_p = torch.randn_like(image)
         noise_u = torch.randn_like(unsup)
-        t_p = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
-        t_u = torch.randint(0, self.num_timesteps, (self.batch_size,), device=self.device).long()
+
+        t_p = torch.randint(0, self.num_timesteps, (image.shape[0],), device=self.device).long()
+        t_u = torch.randint(0, self.num_timesteps, (unsup.shape[0],), device=self.device).long()
+
         loss_image = self.diffusion_image.forward(torch.cat([image, unsup], dim=0), 
                                                   torch.cat([t_p, t_u], dim=0), 
                                                   torch.cat([noise_p, noise_u], dim=0))
@@ -279,8 +286,9 @@ class DDMMLightningModule(LightningModule):
             label_samples = self.diffusion_label.sample(batch_size=self.batch_size, img=noise_samples)
             viz2d = torch.cat([image, label, image_samples, label_samples], dim=-1).transpose(2, 3)
             grid = torchvision.utils.make_grid(viz2d, normalize=False, scale_each=False, nrow=8, padding=0)
-            tensorboard = self.logger.experiment
-            tensorboard.add_image(f'{stage}_samples', grid.clamp(0., 1.), self.current_epoch*self.batch_size + batch_idx)
+            wandb_log = self.logger.experiment
+            grid_permuted = grid.permute(1, 2, 0)
+            wandb_log.log({f"{stage}_samples_epoch_{self.current_epoch}": wandb.Image(grid_permuted.cpu().clamp(0.0, 1.0))})
         
         # loss = loss_image + loss_label                       
         # info = {"loss": loss}
@@ -321,60 +329,75 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--timesteps", type=int, default=100, help="timesteps")
     parser.add_argument("--batch_size", type=int, default=16, help="batch size")
-    parser.add_argument("--shape", type=int, default=256, help="spatial size of the tensor")
-    parser.add_argument("--train_samples", type=int, default=4000, help="training samples")
-    parser.add_argument("--val_samples", type=int, default=800, help="validation samples")
+    parser.add_argument(
+        "--shape", type=int, default=256, help="spatial size of the tensor"
+    )
+    parser.add_argument(
+        "--train_samples", type=int, default=4000, help="training samples"
+    )
+    parser.add_argument(
+        "--val_samples", type=int, default=800, help="validation samples"
+    )
     parser.add_argument("--test_samples", type=int, default=400, help="test samples")
-    
-    parser.add_argument("--logsdir", type=str, default='logs', help="logging directory")
-    parser.add_argument("--datadir", type=str, default='data', help="data directory")
-    
+
+    parser.add_argument("--logsdir", type=str, default="logs", help="logging directory")
+    parser.add_argument("--datadir", type=str, default="data", help="data directory")
+
     parser.add_argument("--epochs", type=int, default=301, help="number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    
-    parser = Trainer.add_argparse_args(parser)
+    parser.add_argument(
+        "--accelerator", type=str, default="mps", help="accelerator instances"
+    )
+    parser.add_argument("--devices", type=str, default="auto", help="number of devices")
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="ddp",
+        help="Strategy controls the model distribution across training",
+    )
+    parser.add_argument("--precision", type=str, default="bf16")
     
     # Collect the hyper parameters
     hparams = parser.parse_args()
     # Create data module
-    
+
     train_image_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/JSRT/processed/images/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/ChinaSet/processed/images/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/Montgomery/processed/images/'),
-        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'), 
-        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/images'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/train/images/'), 
-        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'), 
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
+        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'),
+        # os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62020/20200501/raw/images'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/T62021/20211101/raw/images'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/train/images/'),
+        # os.path.join(hparams.datadir, 'SpineXRVertSegmentation/VinDr/v1/processed/test/images/'),
     ]
     train_label_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/JSRT/processed/labels/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/ChinaSet/processed/labels/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/Montgomery/processed/labels/'),
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     train_unsup_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/train/images/'), 
+        os.path.join(hparams.datadir, "data/VinDR/train/"),
     ]
 
     val_image_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/JSRT/processed/images/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/ChinaSet/processed/images/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/Montgomery/processed/images/'),
+        os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/images/"),
     ]
 
     val_label_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/JSRT/processed/labels/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/ChinaSet/processed/labels/'), 
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/Montgomery/processed/labels/'),
+        os.path.join(hparams.datadir, "data/JSRT/processed/labels/"),
+        os.path.join(hparams.datadir, "data/ChinaSet/processed/labels/"),
+        os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
     val_unsup_dirs = [
-        os.path.join(hparams.datadir, 'ChestXRLungSegmentation/VinDr/v1/processed/test/images/'), 
+        os.path.join(hparams.datadir, "data/VinDR/test/"),
     ]
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
@@ -428,24 +451,28 @@ if __name__ == "__main__":
     )
     lr_callback = LearningRateMonitor(logging_interval='step')
     # Logger
-    tensorboard_logger = TensorBoardLogger(save_dir=hparams.logsdir, log_graph=True)
-
+    # Initialize wandb
+    wandb.init(project="cycle-consistent-DDMM", entity="diffusors")
+    wandb_logger = WandbLogger(
+        save_dir=hparams.logsdir, log_model="all", project="diffusor"
+    )
     # Init model with callbacks
-    trainer = Trainer.from_argparse_args(
-        hparams, 
+    trainer = Trainer(
+        accelerator=hparams.accelerator,
+        devices=hparams.devices,
         max_epochs=hparams.epochs,
-        logger=[tensorboard_logger],
+        logger=[wandb_logger],
         callbacks=[
             lr_callback,
-            checkpoint_callback, 
+            checkpoint_callback,
         ],
         # accumulate_grad_batches=4, 
-        strategy="fsdp", #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
-        precision=16,  #if hparams.use_amp else 32,
+        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        precision=hparams.precision,  #if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
         # stochastic_weight_avg=True,
-        # auto_scale_batch_size=True, 
+        auto_scale_batch_size=True, 
         # gradient_clip_val=5, 
         # gradient_clip_algorithm='norm', #'norm', #'value'
         # track_grad_norm=2, 

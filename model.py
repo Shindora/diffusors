@@ -1,5 +1,3 @@
-
-
 import math
 import copy
 from pathlib import Path
@@ -581,7 +579,7 @@ class GaussianDiffusion(nn.Module):
 
     def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False):
         model_output = self.model(x, t, x_self_cond)
-        maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
+        maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity # ?
 
         if self.objective == 'pred_noise':
             pred_noise = model_output

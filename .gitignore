@@ -2,9 +2,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+.vscode
+logs
 # C extensions
 *.so
+wandb/*
+data.zip
 
 # Distribution / packaging
 .Python
@@ -127,3 +130,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+data/*

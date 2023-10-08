@@ -1,0 +1,34 @@
+name: diffusion-venv
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - pip
+  - jupyterlab
+  - ipywidgets
+  - scipy
+  - scikit-learn
+  - panel
+  - pytest
+  - pip:
+    - pytorch-lightning==1.9.5
+    - click
+    - torch
+    - torchvision 
+    - torchaudio
+    - wandb
+    - torchmetrics
+    - accelerate
+    - datasets
+    - monai
+    - kaggle
+    - einops
+    - ema-pytorch
+    - fairscale 
+    - deepspeed 
+    - horovod
+    - diffusers
