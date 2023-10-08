@@ -27,7 +27,7 @@ from argparse import ArgumentParser
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
@@ -583,14 +583,13 @@ class DDMMLightningModule(LightningModule):
                 logger=True,
                 sync_dist=True,
             )
-            return loss
         else:
             mean_dict = {}
             for key in outputs[0].keys():
                 mean_dict[key] = torch.stack([x[key] for x in outputs]).mean()
             for loss_name, loss_value in mean_dict.items():
                 self.log(
-                f"{stage}_{loss_name}_loss",
+                f"{stage}_{loss_name}_loss_epoch",
                 loss_value,
                 on_step=False,
                 prog_bar=True,
@@ -756,6 +755,14 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(
         save_dir=hparams.logsdir, log_model=hparams.log_model, project="diffusor"
     )
+    
+    early_stop_callback = EarlyStopping(
+        monitor='validation_loss_epoch',  # The quantity to be monitored
+        min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
+        patience=5,  # Number of epochs with no improvement after which training will be stopped
+        verbose=False,  # Whether to print logs in stdout
+        mode='min'  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
+    )
     # Init model with callbacks
     trainer = Trainer(
         accelerator=hparams.accelerator,
@@ -765,6 +772,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
+            early_stop_callback,
         ],
         # accumulate_grad_batches=4,
         strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
