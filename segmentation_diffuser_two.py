@@ -1,11 +1,21 @@
 import os
 import glob
+from collections import Counter
 
 from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model import dice_loss
+from torchmetrics.classification import Dice
+from torchmetrics.clustering import RandScore, NormalizedMutualInfoScore
+from torchmetrics.regression import MinkowskiDistance
+from torchmetrics.image import (
+    MultiScaleStructuralSimilarityIndexMeasure,
+    UniversalImageQualityIndex,
+    VisualInformationFidelity,
+    RelativeAverageSpectralError,
+)
+
 import torchvision
 import wandb
 
@@ -426,8 +436,27 @@ class DDMMLightningModule(LightningModule):
             ),
         )
 
-        self.loss_func =  nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.loss_functions = {
+            "l1": nn.SmoothL1Loss(reduction="mean", beta=0.02),
+            "dice_score": Dice(average="micro"),
+            "rand_score": RandScore(),
+            "kid": MinkowskiDistance(p=3),
+            "ssim": MultiScaleStructuralSimilarityIndexMeasure(
+                gaussian_kernel=True, reduction="elementwise_mean"
+            ),
+            "uqi": UniversalImageQualityIndex(reduction="elementwise_mean"),
+            "vif": VisualInformationFidelity(),
+            "rase": RelativeAverageSpectralError(),
+            "nmi": NormalizedMutualInfoScore(average_method="arithmetic"),
+        }
+
         self.save_hyperparameters()
+        
+    def calculate_loss(self, preds, target, chose_loss_fn = "l1"):
+        for name, func in self.loss_functions.items():
+            if chose_loss_fn == name:
+                return func(preds, target)
+
 
     def _common_step(
         self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
@@ -454,28 +483,30 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-        pred_label = self.diffusion_from_image_to_label.forward(
-            mid_i, timesteps
-        ).sample
-        pred_image = self.diffusion_from_label_to_image.forward(
-            mid_l, timesteps
-        ).sample
+        pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
+        pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
-        super_loss = (
-            self.loss_func(est_i, rng_p)
-            + self.loss_func(est_l, rng_p)
-            + self.loss_func(pred_image, mid_i)
-            + self.loss_func(pred_label, mid_l)
-        )
+        super_loss_dict = {}
+        for loss_name in self.loss_functions.keys():
+            super_loss_dict[loss_name] = (
+                self.calculate_loss(est_i, rng_p, loss_name)
+                + self.calculate_loss(est_l, rng_p, loss_name)
+                + self.calculate_loss(pred_image, mid_i, loss_name)
+                + self.calculate_loss(pred_label, mid_l, loss_name)
+            )
+
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
-        unsup_loss = self.loss_func(est_u, rng_u)
+        unsup_loss_dict = {}
+        for loss_name in self.loss_functions.keys():
+            unsup_loss_dict[loss_name] = self.calculate_loss(est_u, rng_u, loss_name)
+
 
         self.log(
             f"{stage}_super_loss",
-            super_loss,
+            super_loss_dict.get('l1'),
             on_step=(stage == "train"),
             prog_bar=True,
             logger=True,
@@ -484,7 +515,7 @@ class DDMMLightningModule(LightningModule):
         )
         self.log(
             f"{stage}_unsup_loss",
-            unsup_loss,
+            unsup_loss_dict.get('l1'),
             on_step=(stage == "train"),
             prog_bar=True,
             logger=True,
@@ -492,7 +523,7 @@ class DDMMLightningModule(LightningModule):
             batch_size=self.batch_size,
         )
 
-        loss = super_loss + unsup_loss
+        total_loss_dict = dict(Counter(super_loss_dict) + Counter(unsup_loss_dict))
 
         if batch_idx % 20 == 0:
             with torch.no_grad():
@@ -502,7 +533,7 @@ class DDMMLightningModule(LightningModule):
                 for i, t in enumerate(self.noise_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
-                
+
                     cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
                     cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
@@ -513,9 +544,9 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            viz2d = torch.cat([image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1).transpose(
-                2, 3
-            )
+            viz2d = torch.cat(
+                [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
+            ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
             )
@@ -524,16 +555,11 @@ class DDMMLightningModule(LightningModule):
             grid_image = torchvision.transforms.ToPILImage()(grid.clamp(0.0, 1.0))
             wandb_log = self.logger.experiment
             wandb_log.log(
-                {
-                    f"{stage}__samples": [
-                        wandb.Image(grid_image)
-                    ]
-                },
+                {f"{stage}__samples": [wandb.Image(grid_image)]},
                 step=self.global_step // 10,
             )
 
-        info = {f"loss": loss}
-        return info
+        return total_loss_dict
 
     def training_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, optimizer_idx=0, stage="train")
@@ -609,7 +635,9 @@ if __name__ == "__main__":
         help="Strategy controls the model distribution across training",
     )
     parser.add_argument("--precision", type=int, default=32)
-    parser.add_argument("--log_model", type=bool, default=True, help="log mode in wandb")
+    parser.add_argument(
+        "--log_model", type=bool, default=True, help="log mode in wandb"
+    )
 
     # parser = Trainer.add_argparse_args(parser)
 
@@ -719,7 +747,7 @@ if __name__ == "__main__":
             checkpoint_callback,
         ],
         # accumulate_grad_batches=4,
-        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=hparams.precision,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
