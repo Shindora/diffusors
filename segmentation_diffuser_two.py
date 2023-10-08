@@ -5,7 +5,7 @@ from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from model import dice_loss
 import torchvision
 import wandb
 
@@ -426,7 +426,7 @@ class DDMMLightningModule(LightningModule):
             ),
         )
 
-        self.loss_func = nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.loss_func = dice_loss
         self.save_hyperparameters()
 
     def _common_step(
@@ -494,7 +494,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if stage == 'train' and batch_idx % 20 == 0:
+        if batch_idx % 20 == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -525,7 +525,7 @@ class DDMMLightningModule(LightningModule):
             wandb_log = self.logger.experiment
             wandb_log.log(
                 {
-                    f"{stage}_batch_index_{batch_idx}_samples": [
+                    f"{stage}__samples": [
                         wandb.Image(grid_image)
                     ]
                 },
@@ -609,6 +609,7 @@ if __name__ == "__main__":
         help="Strategy controls the model distribution across training",
     )
     parser.add_argument("--precision", type=int, default=32)
+    parser.add_argument("--log_model", type=bool, default=True, help="log mode in wandb")
 
     # parser = Trainer.add_argparse_args(parser)
 
@@ -697,7 +698,7 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath=hparams.logsdir,
         filename="{epoch:02d}-{validation_loss_epoch:.2f}",
-        save_top_k=-1,
+        save_top_k=1,
         save_last=True,
         every_n_epochs=1,
     )
@@ -705,7 +706,7 @@ if __name__ == "__main__":
     # Logger
     wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
     wandb_logger = WandbLogger(
-        save_dir=hparams.logsdir, log_model=True, project="diffusor"
+        save_dir=hparams.logsdir, log_model=hparams.log_model, project="diffusor"
     )
     # Init model with callbacks
     trainer = Trainer(
