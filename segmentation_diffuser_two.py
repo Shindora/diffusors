@@ -697,7 +697,7 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath=hparams.logsdir,
         filename="{epoch:02d}-{validation_loss_epoch:.2f}",
-        save_top_k=-1,
+        save_top_k=1,
         save_last=True,
         every_n_epochs=1,
     )
