@@ -494,7 +494,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if stage == 'train' and batch_idx % 20 == 0:
+        if batch_idx % 20 == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -525,7 +525,7 @@ class DDMMLightningModule(LightningModule):
             wandb_log = self.logger.experiment
             wandb_log.log(
                 {
-                    f"{stage}_batch_index_{batch_idx}_samples": [
+                    f"{stage}__samples": [
                         wandb.Image(grid_image)
                     ]
                 },
