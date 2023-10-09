@@ -17,7 +17,7 @@ from argparse import ArgumentParser
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
@@ -602,6 +602,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("--precision", type=int, default=32)
 
+    parser.add_argument(
+        "--wandb_tags",
+        type=str,
+        default=None,
+        help="A list of strings, which will populate the list of tags on this run in the UI",
+    )
+    parser.add_argument(
+        "--wandb_name",
+        type=str,
+        default=None,
+        help="A short display name for this run, which is how you'll identify this run in the UI",
+    )
+    
+    parser.add_argument('--mode_train', type=str, required=True, choices=['diffusion_image', 'diffusion_label', 'diffusion_from_image_to_label', 'diffusion_from_label_to_image', 'all'], help='The model to train')
+
     # parser = Trainer.add_argparse_args(parser)
 
     # Collect the hyper parameters
@@ -625,9 +640,7 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
-    train_unsup_dirs = [
-        os.path.join(hparams.datadir, "data/VinDR/train/"),
-    ]
+
 
     val_image_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
@@ -641,12 +654,20 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
-    val_unsup_dirs = [
-        os.path.join(hparams.datadir, "data/VinDR/test/"),
-    ]
+
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
-    test_unsup_dirs = val_unsup_dirs
+    
+    if hparams.mode_train in ['diffusion_image', 'all']:
+        train_unsup_dirs = [
+            os.path.join(hparams.datadir, "data/VinDR/train/"),
+        ]
+        val_unsup_dirs = [
+            os.path.join(hparams.datadir, "data/VinDR/test/"),
+        ]
+        test_unsup_dirs = val_unsup_dirs
+    else:
+        train_unsup_dirs, val_unsup_dirs, test_unsup_dirs = [], [], []
 
     datamodule = PairedAndUnsupervisedDataModule(
         train_image_dirs=train_image_dirs,
@@ -694,8 +715,22 @@ if __name__ == "__main__":
         every_n_epochs=1,
     )
     lr_callback = LearningRateMonitor(logging_interval="step")
+
+    early_stop_callback = EarlyStopping(
+        monitor="validation_loss_epoch",  # The quantity to be monitored
+        min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
+        patience=5,  # Number of epochs with no improvement after which training will be stopped
+        verbose=True,  # Whether to print logs in stdout
+        mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
+    )
     # Logger
-    wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
+    wandb.init(
+        project="cycle-consistent-DDMM",
+        entity="diffusors",
+        dir=hparams.logsdir,
+        tags=hparams.wandb_tags,
+        name=hparams.wandb_name,
+    )
     wandb_logger = WandbLogger(
         save_dir=hparams.logsdir, log_model=True, project="diffusor"
     )
@@ -708,6 +743,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
+            early_stop_callback,
         ],
         # accumulate_grad_batches=4,
         # strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
@@ -724,18 +760,31 @@ if __name__ == "__main__":
         # deterministic=False,
         # profiler="simple",
     )
+    mode_train_dict = {
+        'diffusion_image': model.diffusion_image,
+        'diffusion_label': model.diffusion_label, 
+        'diffusion_from_image_to_label': model.diffusion_from_image_to_label, 
+        'diffusion_from_label_to_image': model.diffusion_from_label_to_image,
+        'all': model
+    }
+    for training_mode, specific_model  in mode_train_dict.items():
+        if training_mode == hparams.mode_train:
+            trainer.fit(
+                specific_model,
+                datamodule,  # ,
+                ckpt_path=hparams.ckpt
+                if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
+                else None,  # "some/path/to/my_checkpoint.ckpt"
+            )
 
-    trainer.fit(
-        model,
-        datamodule,  # ,
-        ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None
-        else None,  # "some/path/to/my_checkpoint.ckpt"
-    )
-
-    # test
-    trainer.test(
-        model, datamodule, ckpt_path=hparams.ckpt if hparams.ckpt is not None else None
-    )
+    if hparams.mode_train == 'all':
+        # test
+        trainer.test(
+            model,
+            datamodule,
+            ckpt_path=hparams.ckpt
+            if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
+            else None,
+        )
 
     # serve
