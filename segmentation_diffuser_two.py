@@ -454,12 +454,8 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-        pred_label = self.diffusion_from_image_to_label.forward(
-            mid_i, timesteps
-        ).sample
-        pred_image = self.diffusion_from_label_to_image.forward(
-            mid_l, timesteps
-        ).sample
+        pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
+        pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
             self.loss_func(est_i, rng_p)
@@ -476,7 +472,7 @@ class DDMMLightningModule(LightningModule):
         self.log(
             f"{stage}_super_loss",
             super_loss,
-            on_step=(stage == "train"),
+            on_step=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
@@ -485,7 +481,7 @@ class DDMMLightningModule(LightningModule):
         self.log(
             f"{stage}_unsup_loss",
             unsup_loss,
-            on_step=(stage == "train"),
+            on_step=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
@@ -502,7 +498,7 @@ class DDMMLightningModule(LightningModule):
                 for i, t in enumerate(self.noise_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
-                
+
                     cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
                     cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
@@ -513,9 +509,9 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            viz2d = torch.cat([image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1).transpose(
-                2, 3
-            )
+            viz2d = torch.cat(
+                [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
+            ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
             )
@@ -524,11 +520,7 @@ class DDMMLightningModule(LightningModule):
             grid_image = torchvision.transforms.ToPILImage()(grid.clamp(0.0, 1.0))
             wandb_log = self.logger.experiment
             wandb_log.log(
-                {
-                    f"{stage}__samples": [
-                        wandb.Image(grid_image)
-                    ]
-                },
+                {f"{stage}__samples": [wandb.Image(grid_image)]},
                 step=self.global_step // 10,
             )
 
@@ -742,5 +734,8 @@ if __name__ == "__main__":
     )
 
     # test
+    trainer.test(
+        model, datamodule, ckpt_path=hparams.ckpt if hparams.ckpt is not None else None
+    )
 
     # serve
