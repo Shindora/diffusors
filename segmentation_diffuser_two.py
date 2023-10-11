@@ -468,8 +468,10 @@ class DDMMLightningModule(LightningModule):
         super_loss = (
             self.loss_func(est_i, rng_p) # blending image loss
             + self.loss_func(est_l, rng_p) # blending label loss
-            + self.loss_func(prev_i, est_i)  # pre-transition 1 step image loss
-            + self.loss_func(prev_l, est_l)  # pre-transition 1 step label loss
+            + self.loss_func(prev_i, mid_i)  # pre-transition 1 step image loss
+            + self.loss_func(prev_l, mid_u)  # pre-transition 1 step label loss
+            + self.loss_func(mid_i, est_i)  # post-transition 1 step image loss
+            + self.loss_func(mid_l, est_l)  # post-transition 1 step label loss
             + self.loss_func(pred_image, mid_i)  # cycle image loss
             + self.loss_func(pred_label, mid_l)  # cycle label loss
         )
@@ -481,6 +483,7 @@ class DDMMLightningModule(LightningModule):
         unsup_loss = (
             self.loss_func(est_u, rng_u) # blending image loss
             + self.loss_func(prev_u, mid_u) # unpaired pre-transition 1 step loss 
+            + self.loss_func(mid_u, est_u) # unpaired post-transition 1 step loss 
         )
 
         self.log(
