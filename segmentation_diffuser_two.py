@@ -303,7 +303,7 @@ class DDMMLightningModule(LightningModule):
         )
 
         # The embedding layer will map the class label to a vector of size class_emb_size
-        if self.mode_train in ['diffusion_image', 'all']:
+        if self.mode_train in ["diffusion_image", "all"]:
             self.diffusion_image = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -335,7 +335,7 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        if self.mode_train in ['diffusion_from_image_to_label','all']:
+        if self.mode_train in ["diffusion_from_image_to_label", "all"]:
             self.diffusion_from_image_to_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -367,7 +367,7 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        if self.mode_train in ['diffusion_image', 'all']:
+        if self.mode_train in ["diffusion_image", "all"]:
             self.diffusion_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -399,7 +399,7 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        if self.mode_train in ['diffusion_from_label_to_image', 'all']:
+        if self.mode_train in ["diffusion_from_label_to_image", "all"]:
             self.diffusion_from_label_to_image = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -459,20 +459,29 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
+        prev_i = self.noise_scheduler.step(mid_i, timesteps, rng_p).prev_sample
+        prev_l = self.noise_scheduler.step(mid_l, timesteps, rng_p).prev_sample
+
         pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
-            self.loss_func(est_i, rng_p)
-            + self.loss_func(est_l, rng_p)
-            + self.loss_func(pred_image, mid_i)
-            + self.loss_func(pred_label, mid_l)
+            self.loss_func(est_i, rng_p) # blending image loss
+            + self.loss_func(est_l, rng_p) # blending label loss
+            + self.loss_func(prev_i, est_i)  # pre-transition 1 step image loss
+            + self.loss_func(prev_l, est_l)  # pre-transition 1 step label loss
+            + self.loss_func(pred_image, mid_i)  # cycle image loss
+            + self.loss_func(pred_label, mid_l)  # cycle label loss
         )
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
+        prev_u = self.noise_scheduler.step(mid_u, rng_u, timesteps).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
-        unsup_loss = self.loss_func(est_u, rng_u)
+        unsup_loss = (
+            self.loss_func(est_u, rng_u) # blending image loss
+            + self.loss_func(prev_u, mid_u) # unpaired pre-transition 1 step loss 
+        )
 
         self.log(
             f"{stage}_super_loss",
@@ -619,8 +628,20 @@ if __name__ == "__main__":
         default=None,
         help="A short display name for this run, which is how you'll identify this run in the UI",
     )
-    
-    parser.add_argument('--mode_train', type=str, required=True, choices=['diffusion_image', 'diffusion_label', 'diffusion_from_image_to_label', 'diffusion_from_label_to_image', 'all'], help='The model to train')
+
+    parser.add_argument(
+        "--mode_train",
+        type=str,
+        required=True,
+        choices=[
+            "diffusion_image",
+            "diffusion_label",
+            "diffusion_from_image_to_label",
+            "diffusion_from_label_to_image",
+            "all",
+        ],
+        help="The model to train",
+    )
 
     # parser = Trainer.add_argparse_args(parser)
 
@@ -645,8 +666,6 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
-
-
     val_image_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
         os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
@@ -659,11 +678,10 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
-
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
-    
-    if hparams.mode_train in ['diffusion_image', 'all']:
+
+    if hparams.mode_train in ["diffusion_image", "all"]:
         train_unsup_dirs = [
             os.path.join(hparams.datadir, "data/VinDR/train/"),
         ]
@@ -765,24 +783,15 @@ if __name__ == "__main__":
         # deterministic=False,
         # profiler="simple",
     )
-    mode_train_dict = {
-        'diffusion_image': model.diffusion_image,
-        'diffusion_label': model.diffusion_label, 
-        'diffusion_from_image_to_label': model.diffusion_from_image_to_label, 
-        'diffusion_from_label_to_image': model.diffusion_from_label_to_image,
-        'all': model
-    }
-    for training_mode, specific_model  in mode_train_dict.items():
-        if training_mode == hparams.mode_train:
-            trainer.fit(
-                specific_model,
-                datamodule,  # ,
-                ckpt_path=hparams.ckpt
-                if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
-                else None,  # "some/path/to/my_checkpoint.ckpt"
-            )
+    trainer.fit(
+        model,
+        datamodule,  # ,
+        ckpt_path=hparams.ckpt
+        if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
+        else None,  # "some/path/to/my_checkpoint.ckpt"
+    )
 
-    if hparams.mode_train == 'all':
+    if hparams.mode_train == "all":
         # test
         trainer.test(
             model,
