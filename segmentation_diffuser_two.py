@@ -51,8 +51,16 @@ from monai.transforms import (
 
 # from data import CustomDataModule
 # from cdiff import *
-from diffusers import UNet2DModel
-from scheduler import CustomDDPMScheduler
+from diffusers import UNet2DModel, DDPMScheduler
+class CustomDDPMScheduler(DDPMScheduler):
+    def __init__(self, device, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.device = device
+        self.to(device)
+
+    def to(self, device):
+        self.alphas_cumprod = self.alphas_cumprod.to(device)
+
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
@@ -632,20 +640,6 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="A short display name for this run, which is how you'll identify this run in the UI",
-    )
-
-    parser.add_argument(
-        "--mode_train",
-        type=str,
-        required=True,
-        choices=[
-            "diffusion_image",
-            "diffusion_label",
-            "diffusion_from_image_to_label",
-            "diffusion_from_label_to_image",
-            "all",
-        ],
-        help="The model to train",
     )
 
     # parser = Trainer.add_argparse_args(parser)
