@@ -25,6 +25,7 @@ import monai
 from monai.data import Dataset, CacheDataset, DataLoader
 from monai.data import list_data_collate, decollate_batch
 from monai.utils import first, set_determinism, get_seed, MAX_SEED
+from monai.losses.dice import DiceLoss
 from monai.transforms import (
     apply_transform,
     Randomizable,
@@ -431,7 +432,8 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        self.loss_func = nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.dice_loss = DiceLoss(include_background=True, to_onehot_y=True)
         self.save_hyperparameters()
 
     def _common_step(
@@ -466,14 +468,14 @@ class DDMMLightningModule(LightningModule):
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
-            self.loss_func(est_i, rng_p) # blending image loss
-            + self.loss_func(est_l, rng_p) # blending label loss
-            + self.loss_func(prev_i, mid_i)  # pre-transition 1 step image loss
-            + self.loss_func(prev_l, mid_u)  # pre-transition 1 step label loss
-            + self.loss_func(mid_i, est_i)  # post-transition 1 step image loss
-            + self.loss_func(mid_l, est_l)  # post-transition 1 step label loss
-            + self.loss_func(pred_image, mid_i)  # cycle image loss
-            + self.loss_func(pred_label, mid_l)  # cycle label loss
+            self.l1_loss(est_i, rng_p) # blending image loss
+            + self.dice_loss(est_l, rng_p) # blending label loss
+            + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
+            + self.dice_loss(prev_l, mid_u)  # pre-transition 1 step label loss
+            + self.l1_loss(mid_i, est_i)  # post-transition 1 step image loss
+            + self.dice_loss(mid_l, est_l)  # post-transition 1 step label loss
+            + self.l1_loss(pred_image, mid_i)  # cycle image loss
+            + self.l1_loss(pred_label, mid_l)  # cycle label loss
         )
 
         # 2nd pass, unsupervised
@@ -481,9 +483,9 @@ class DDMMLightningModule(LightningModule):
         prev_u = self.noise_scheduler.step(mid_u, rng_u, timesteps).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = (
-            self.loss_func(est_u, rng_u) # blending image loss
-            + self.loss_func(prev_u, mid_u) # unpaired pre-transition 1 step loss 
-            + self.loss_func(mid_u, est_u) # unpaired post-transition 1 step loss 
+            self.l1_loss(est_u, rng_u) # blending image loss
+            + self.l1_loss(prev_u, mid_u) # unpaired pre-transition 1 step loss 
+            + self.l1_loss(mid_u, est_u) # unpaired post-transition 1 step loss 
         )
 
         self.log(
