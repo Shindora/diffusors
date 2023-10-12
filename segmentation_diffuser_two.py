@@ -509,7 +509,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if batch_idx % 20 == 0:
+        if stage=='train' and batch_idx % 20 == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -518,8 +518,8 @@ class DDMMLightningModule(LightningModule):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
-                    cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
+                    cycle_i = self.diffusion_from_label_to_image(res_l, t).sample
+                    cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
                     sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
@@ -529,7 +529,7 @@ class DDMMLightningModule(LightningModule):
                 sam_l = sam_l * 0.5 + 0.5
 
             viz2d = torch.cat(
-                [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
+                [image, label, sam_i, sam_l, res_i, res_l, cycle_i, cycle_l, unsup], dim=-1
             ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
