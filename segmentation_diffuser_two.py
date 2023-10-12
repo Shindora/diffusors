@@ -442,8 +442,8 @@ class DDMMLightningModule(LightningModule):
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
         _device = image.device
 
-        rng_p = torch.randn_like(image)
-        rng_u = torch.randn_like(unsup)
+        rng_p = torch.randn_like(image).to(_device)
+        rng_u = torch.randn_like(unsup).to(_device)
 
         bs = image.shape[0]
 
@@ -792,7 +792,7 @@ if __name__ == "__main__":
         model,
         datamodule,  # ,
         ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
+        if hparams.ckpt is not None 
         else None,  # "some/path/to/my_checkpoint.ckpt"
     )
 
@@ -802,7 +802,7 @@ if __name__ == "__main__":
             model,
             datamodule,
             ckpt_path=hparams.ckpt
-            if hparams.ckpt is not None or not os.path.exists(hparams.ckpt)
+            if hparams.ckpt is not None 
             else None,
         )
 
