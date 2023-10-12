@@ -51,8 +51,8 @@ from monai.transforms import (
 
 # from data import CustomDataModule
 # from cdiff import *
-from diffusers import UNet2DModel, DDPMScheduler
-
+from diffusers import UNet2DModel
+from scheduler import CustomDDPMScheduler
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
@@ -284,6 +284,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         return self.val_loader
 
 
+
 class DDMMLightningModule(LightningModule):
     def __init__(self, hparams, *kwargs) -> None:
         super().__init__()
@@ -296,11 +297,10 @@ class DDMMLightningModule(LightningModule):
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
-        self.mode_train = hparams.mode_train
 
         # Create a scheduler
-        self.noise_scheduler = DDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2"
+        self.noise_scheduler = CustomDDPMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda'
         )
 
         # The embedding layer will map the class label to a vector of size class_emb_size
@@ -441,8 +441,8 @@ class DDMMLightningModule(LightningModule):
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
         _device = image.device
 
-        rng_p = torch.randn_like(image).to(_device)
-        rng_u = torch.randn_like(unsup).to(_device)
+        rng_p = torch.randn_like(image)
+        rng_u = torch.randn_like(unsup)
 
         bs = image.shape[0]
 
@@ -796,14 +796,13 @@ if __name__ == "__main__":
         else None,  # "some/path/to/my_checkpoint.ckpt"
     )
 
-    if hparams.mode_train == "all":
-        # test
-        trainer.test(
-            model,
-            datamodule,
-            ckpt_path=hparams.ckpt
-            if hparams.ckpt is not None 
-            else None,
-        )
+
+    trainer.test(
+        model,
+        datamodule,
+        ckpt_path=hparams.ckpt
+        if hparams.ckpt is not None 
+        else None,
+    )
 
     # serve
