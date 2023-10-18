@@ -14,6 +14,7 @@ dependencies:
   - scikit-learn
   - panel
   - pytest
+  - gdown
   - pip:
     - pytorch-lightning==1.9.5
     - click
@@ -29,6 +30,5 @@ dependencies:
     - einops
     - ema-pytorch
     - fairscale 
-    - deepspeed 
-    - horovod
+    - deepspeed
     - diffusers

@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "ml-venv"
+version = "0.1.0"
+description = "Cycle consistent diffusors"
+authors = ["VincentTran <vi.ttran.it@gmail.com>"]
+license = "Apache License"
+readme = "README.md"
+keywords = ["diffusion", "machine learning"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+]
+
+
+[tool.poetry.dependencies]
+python = ">3.10,<3.13"
+matplotlib = "^3.7.2"
+evaluate = "^0.4.0"
+click = "^8.1.6"
+datasets = "^2.13.1"
+captum = "^0.6.0"
+pytest = "^7.4.0"
+jupyterlab = "^4.0.3"
+panel = "^1.2.0"
+ipywidgets = "^8.0.7"
+wandb = "^0.15.5"
+flake8 = "^6.0.0"
+pandas = "^2.1.1"
+scipy = "^1.11.3"
+scikit-learn = "^1.3.1"
+accelerate = "^0.23.0"
+monai = "^1.3.0"
+einops = "^0.7.0"
+ema-pytorch = "^0.2.3"
+fairscale = "^0.4.13"
+deepspeed = "^0.11.1"
+diffusers = "^0.21.4"
+torch = {version = "^2.0.1+cu118", source = "pytorch"}
+torchvision = {version = "^0.15.2",source = "pytorch"}
+torchaudio = {version = "^2.0.2",source = "pytorch"}
+torchmetrics = {version = "^1.0.1",source = "pytorch"}
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118/"
+secondary = true
+
+[build-system]
+requires = ["poetry-core"]

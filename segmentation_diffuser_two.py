@@ -1,48 +1,35 @@
-import os
 import glob
+import os
+from typing import Optional, Sequence, Callable
 
-from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 import torchvision
 import wandb
 
 # Finish the current wandb run if any
 wandb.finish()
-wandb.login()
+wandb.login(key='0c481bbfc92a5de556d5a2cecee92e6ffba9dac8')
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-
 import monai
-from monai.data import Dataset, CacheDataset, DataLoader
-from monai.data import list_data_collate, decollate_batch
-from monai.utils import first, set_determinism, get_seed, MAX_SEED
+from monai.data import DataLoader
+from monai.data import list_data_collate
+from monai.utils import set_determinism
 from monai.losses.dice import DiceLoss
 from monai.transforms import (
     apply_transform,
-    Randomizable,
-    AddChanneld,
     Compose,
-    OneOf,
     LoadImaged,
-    Spacingd,
-    Orientationd,
     DivisiblePadd,
     RandFlipd,
-    RandZoomd,
-    RandAffined,
-    RandScaleCropd,
-    CropForegroundd,
     Resized,
-    Rotate90d,
     HistogramNormalized,
     ScaleIntensityd,
     ScaleIntensityRanged,
@@ -52,6 +39,8 @@ from monai.transforms import (
 # from data import CustomDataModule
 # from cdiff import *
 from diffusers import UNet2DModel, DDPMScheduler
+
+
 class CustomDDPMScheduler(DDPMScheduler):
     def __init__(self, device, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -64,12 +53,12 @@ class CustomDDPMScheduler(DDPMScheduler):
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
-        self,
-        keys: Sequence,
-        data: Sequence,
-        transform: Optional[Callable] = None,
-        length: Optional[Callable] = None,
-        batch_size: int = 32,
+            self,
+            keys: Sequence,
+            data: Sequence,
+            transform: Optional[Callable] = None,
+            length: Optional[Callable] = None,
+            batch_size: int = 32,
     ) -> None:
         self.keys = keys
         self.data = data
@@ -103,21 +92,21 @@ class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomiz
 
 class PairedAndUnsupervisedDataModule(LightningDataModule):
     def __init__(
-        self,
-        train_image_dirs: str = "path/to/dir",
-        train_label_dirs: str = "path/to/dir",
-        train_unsup_dirs: str = "path/to/dir",
-        val_image_dirs: str = "path/to/dir",
-        val_label_dirs: str = "path/to/dir",
-        val_unsup_dirs: str = "path/to/dir",
-        test_image_dirs: str = "path/to/dir",
-        test_label_dirs: str = "path/to/dir",
-        test_unsup_dirs: str = "path/to/dir",
-        shape: int = 256,
-        batch_size: int = 32,
-        train_samples: int = 4000,
-        val_samples: int = 800,
-        test_samples: int = 800,
+            self,
+            train_image_dirs: str = "path/to/dir",
+            train_label_dirs: str = "path/to/dir",
+            train_unsup_dirs: str = "path/to/dir",
+            val_image_dirs: str = "path/to/dir",
+            val_label_dirs: str = "path/to/dir",
+            val_unsup_dirs: str = "path/to/dir",
+            test_image_dirs: str = "path/to/dir",
+            test_label_dirs: str = "path/to/dir",
+            test_unsup_dirs: str = "path/to/dir",
+            shape: int = 256,
+            batch_size: int = 32,
+            train_samples: int = 4000,
+            val_samples: int = 800,
+            test_samples: int = 800,
     ):
         super().__init__()
 
@@ -292,7 +281,6 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         return self.val_loader
 
 
-
 class DDMMLightningModule(LightningModule):
     def __init__(self, hparams, *kwargs) -> None:
         super().__init__()
@@ -343,7 +331,6 @@ class DDMMLightningModule(LightningModule):
             ),
         )
 
-
         self.diffusion_from_image_to_label = UNet2DModel(
             sample_size=self.shape,  # the target image resolution
             in_channels=1,  # the number of input channels, 3 for RGB images
@@ -375,7 +362,6 @@ class DDMMLightningModule(LightningModule):
             ),
         )
 
-
         self.diffusion_label = UNet2DModel(
             sample_size=self.shape,  # the target image resolution
             in_channels=1,  # the number of input channels, 3 for RGB images
@@ -406,7 +392,6 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
-
 
         self.diffusion_from_label_to_image = UNet2DModel(
             sample_size=self.shape,  # the target image resolution
@@ -444,7 +429,7 @@ class DDMMLightningModule(LightningModule):
         self.save_hyperparameters()
 
     def _common_step(
-        self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
+            self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
     ):
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
         _device = image.device
@@ -464,36 +449,35 @@ class DDMMLightningModule(LightningModule):
         # (this is the forward diffusion process)
         mid_i = self.noise_scheduler.add_noise(image * 2.0 - 1.0, rng_p, timesteps)
         mid_l = self.noise_scheduler.add_noise(label * 2.0 - 1.0, rng_p, timesteps)
-        
-        prev_i = self.noise_scheduler.step(mid_i.clone().detach(), timesteps, rng_p).prev_sample
-        prev_l = self.noise_scheduler.step(mid_l.clone().detach(), timesteps, rng_p).prev_sample
 
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
+        # prev_i = self.noise_scheduler.step(est_i, timesteps, mid_i).prev_sample
+        # prev_l = self.noise_scheduler.step(est_l, timesteps, mid_l).prev_sample
 
         pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
-            self.l1_loss(est_i, rng_p) # blending image loss
-            + self.dice_loss(est_l, rng_p) # blending label loss
-            + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
-            + self.dice_loss(prev_l, mid_u)  # pre-transition 1 step label loss
-            + self.l1_loss(mid_i, est_i)  # post-transition 1 step image loss
-            + self.dice_loss(mid_l, est_l)  # post-transition 1 step label loss
-            + self.l1_loss(pred_image, mid_i)  # cycle image loss
-            + self.l1_loss(pred_label, mid_l)  # cycle label loss
+                self.l1_loss(est_i, rng_p)  # blending image loss
+                + self.dice_loss(est_l, rng_p)  # blending label loss
+                # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
+                # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
+                + self.l1_loss(mid_i, est_i)  # post-transition 1 step image loss
+                + self.dice_loss(mid_l, est_l)  # post-transition 1 step label loss
+                + self.l1_loss(pred_image, mid_i)  # cycle image loss
+                + self.l1_loss(pred_label, mid_l)  # cycle label loss
         )
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
-        prev_u = self.noise_scheduler.step(mid_u, rng_u, timesteps).prev_sample
+        # prev_u = self.noise_scheduler.step(mid_u, timesteps, rng_u).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = (
-            self.l1_loss(est_u, rng_u) # blending image loss
-            + self.l1_loss(prev_u, mid_u) # unpaired pre-transition 1 step loss 
-            + self.l1_loss(mid_u, est_u) # unpaired post-transition 1 step loss 
+                self.l1_loss(est_u, rng_u)  # blending image loss
+                # + self.l1_loss(prev_u, mid_u)  # unpaired pre-transition 1 step loss
+                + self.l1_loss(mid_u, est_u)  # unpaired post-transition 1 step loss
         )
 
         self.log(
@@ -517,7 +501,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if stage=='train' and batch_idx % 20 == 0:
+        if stage == 'train' and batch_idx % 20 == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -680,16 +664,13 @@ if __name__ == "__main__":
     test_image_dirs = val_image_dirs
     test_label_dirs = val_label_dirs
 
-    if hparams.mode_train in ["diffusion_image", "all"]:
-        train_unsup_dirs = [
-            os.path.join(hparams.datadir, "data/VinDR/train/"),
-        ]
-        val_unsup_dirs = [
-            os.path.join(hparams.datadir, "data/VinDR/test/"),
-        ]
-        test_unsup_dirs = val_unsup_dirs
-    else:
-        train_unsup_dirs, val_unsup_dirs, test_unsup_dirs = [], [], []
+    train_unsup_dirs = [
+        os.path.join(hparams.datadir, "data/VinDR/train/"),
+    ]
+    val_unsup_dirs = [
+        os.path.join(hparams.datadir, "data/VinDR/test/"),
+    ]
+    test_unsup_dirs = val_unsup_dirs
 
     datamodule = PairedAndUnsupervisedDataModule(
         train_image_dirs=train_image_dirs,
@@ -786,16 +767,15 @@ if __name__ == "__main__":
         model,
         datamodule,  # ,
         ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None 
+        if hparams.ckpt is not None
         else None,  # "some/path/to/my_checkpoint.ckpt"
     )
-
 
     trainer.test(
         model,
         datamodule,
         ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None 
+        if hparams.ckpt is not None
         else None,
     )
 
