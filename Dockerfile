@@ -9,7 +9,7 @@ COPY .dockerignore /root/.dockerignore
 # Copy the current directory contents into the container at /app
 COPY . /root
 
-RUN apt-get update && apt-get install -y wget && \
+RUN apt-get update && apt-get install -y apt-utils && apt-get install -y wget && \
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
     chmod +x Miniconda3-latest-Linux-x86_64.sh && \
     ./Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda && \
