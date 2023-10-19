@@ -15,6 +15,7 @@ dependencies:
   - panel
   - pytest
   - gdown
+  - nodejs
   - pip:
     - pytorch-lightning==1.9.5
     - click
