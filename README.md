@@ -47,8 +47,8 @@ docker build -t root .
 ```
 
 ```docker
-docker run -it root python segmentation_diffuser_two.py --train_samples 400 --val_samples 200 --test_samples 100 --datadir /content --epochs 20 
---devices 1 --strategy ddp_spawn --batch_size 2 --accelerator gpu --logsdir . --precision 16 --wandb_tags diffusion_all
+docker run -it root python segmentation_diffuser_two.py --train_samples 600 --val_samples 100 --test_samples 200 --datadir . --epochs 25 
+--devices 2 --strategy ddp --batch_size 2 --accelerator gpu --logsdir . --precision 16 --wandb_tags diffusion_all
 ```
 
 ## License

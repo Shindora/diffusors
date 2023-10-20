@@ -9,7 +9,7 @@ import wandb
 
 # Finish the current wandb run if any
 wandb.finish()
-wandb.login(key='0c481bbfc92a5de556d5a2cecee92e6ffba9dac8')
+wandb.login()
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
@@ -39,6 +39,7 @@ from monai.transforms import (
 # from data import CustomDataModule
 # from cdiff import *
 from diffusers import UNet2DModel, DDPMScheduler
+from generative.networks.schedulers import DDPMScheduler, DDIMScheduler
 
 
 class CustomDDPMScheduler(DDPMScheduler):
@@ -514,14 +515,14 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
-                    sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
-                    sam_l = self.noise_scheduler.step(res_l, t, sam_l).prev_sample
+                    # sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
+                    # sam_l = self.noise_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
             viz2d = torch.cat(
-                [image, label, sam_i, sam_l, res_i, res_l, cycle_i, cycle_l, unsup], dim=-1
+                [image, label, res_i, res_l, cycle_i, cycle_l, unsup], dim=-1
             ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
@@ -749,7 +750,7 @@ if __name__ == "__main__":
             early_stop_callback,
         ],
         # accumulate_grad_batches=4,
-        # strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=hparams.precision,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
