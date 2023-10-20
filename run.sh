@@ -3,7 +3,7 @@
 branch=$(git rev-parse --abbrev-ref HEAD)
 
 docker rm -f diffusors-${branch}
-docker build --build-arg NEW_MAMBA_USER_ID=$(id -u) --build-arg NEW_MAMBA_USER_GID=$(id -g)  -t diffusors:${branch} .
+docker build --build-arg MAMBA_USER_ID=$(id -u) --build-arg MAMBA_USER_GID=$(id -g)  -t diffusors:${branch} .
 docker run --gpus all \
     --env-file .env \
     -it -d -v $PWD:/workspace \
