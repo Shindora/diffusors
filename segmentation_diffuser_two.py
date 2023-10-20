@@ -39,7 +39,6 @@ from monai.transforms import (
 # from data import CustomDataModule
 # from cdiff import *
 from diffusers import UNet2DModel, DDPMScheduler
-from generative.networks.schedulers import DDPMScheduler, DDIMScheduler
 
 
 class CustomDDPMScheduler(DDPMScheduler):
