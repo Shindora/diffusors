@@ -425,7 +425,7 @@ class DDMMLightningModule(LightningModule):
         )
 
         self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
-        self.dice_loss = DiceLoss(include_background=True, to_onehot_y=True)
+        self.dice_loss = DiceLoss(include_background=True, to_onehot_y=True, reduction='mean')
         self.save_hyperparameters()
 
     def _common_step(
@@ -461,11 +461,11 @@ class DDMMLightningModule(LightningModule):
 
         super_loss = (
                 self.l1_loss(est_i, rng_p)  # blending image loss
-                + self.dice_loss(est_l, rng_p)  # blending label loss
+                + (1 - self.dice_loss(est_l, rng_p))  # blending label loss
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
                 + self.l1_loss(mid_i, est_i)  # post-transition 1 step image loss
-                + self.dice_loss(mid_l, est_l)  # post-transition 1 step label loss
+                + (1 - self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
                 + self.l1_loss(pred_image, mid_i)  # cycle image loss
                 + self.l1_loss(pred_label, mid_l)  # cycle label loss
         )
@@ -746,7 +746,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
-            early_stop_callback,
+            # early_stop_callback,
         ],
         # accumulate_grad_batches=4,
         strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
