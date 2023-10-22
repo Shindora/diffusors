@@ -49,7 +49,6 @@ class CustomDDPMScheduler(DDPMScheduler):
 
     def to(self, device):
         self.alphas_cumprod = self.alphas_cumprod.to(device)
-        self.config.num_train_timesteps = self.config.num_train_timesteps.to(device)  # Add this line
 
 class CustomDDIMScheduler(DDIMScheduler):
     def __init__(self, device, *args, **kwargs):
@@ -59,7 +58,6 @@ class CustomDDIMScheduler(DDIMScheduler):
 
     def to(self, device):
         self.alphas_cumprod = self.alphas_cumprod.to(device)
-        self.config.num_train_timesteps = self.config.num_train_timesteps.to(device)  # Add this line
 
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
