@@ -436,7 +436,7 @@ class DDMMLightningModule(LightningModule):
         )
 
         self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
-        self.dice_loss = DiceLoss(include_background=True, reduction="mean")
+        self.dice_loss = DiceLoss(include_background=False, to_onehot_y=True, reduction="mean", batch=True)
         self.save_hyperparameters()
 
     def _common_step(
