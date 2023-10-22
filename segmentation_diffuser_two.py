@@ -38,7 +38,7 @@ from monai.transforms import (
 
 # from data import CustomDataModule
 # from cdiff import *
-from diffusers import UNet2DModel, DDPMScheduler
+from diffusers import UNet2DModel, DDPMScheduler, DDIMScheduler
 
 
 class CustomDDPMScheduler(DDPMScheduler):
@@ -50,6 +50,14 @@ class CustomDDPMScheduler(DDPMScheduler):
     def to(self, device):
         self.alphas_cumprod = self.alphas_cumprod.to(device)
 
+class CustomDDIMScheduler(DDIMScheduler):
+    def __init__(self, device, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.device = device
+        self.to(device)
+
+    def to(self, device):
+        self.alphas_cumprod = self.alphas_cumprod.to(device)
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
@@ -295,8 +303,11 @@ class DDMMLightningModule(LightningModule):
         self.timesteps = hparams.timesteps
 
         # Create a scheduler
-        self.noise_scheduler = CustomDDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda'
+        self.ddpm_scheduler = CustomDDPMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', prediction_type='epsilon'
+        )
+        self.ddim_scheduler = CustomDDIMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True, prediction_type='epsilon'
         )
 
         # The embedding layer will map the class label to a vector of size class_emb_size
@@ -441,20 +452,20 @@ class DDMMLightningModule(LightningModule):
 
         # Sample a random timestep for each image
         timesteps = torch.randint(
-            0, self.noise_scheduler.num_train_timesteps, (bs,), device=_device
+            0, self.ddpm_scheduler.num_train_timesteps, (bs,), device=_device
         ).long()
 
         # 1st pass, supervised
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        mid_i = self.noise_scheduler.add_noise(image * 2.0 - 1.0, rng_p, timesteps)
-        mid_l = self.noise_scheduler.add_noise(label * 2.0 - 1.0, rng_p, timesteps)
+        mid_i = self.ddpm_scheduler.add_noise(image * 2.0 - 1.0, rng_p, timesteps)
+        mid_l = self.ddpm_scheduler.add_noise(label * 2.0 - 1.0, rng_p, timesteps)
 
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-        # prev_i = self.noise_scheduler.step(est_i, timesteps, mid_i).prev_sample
-        # prev_l = self.noise_scheduler.step(est_l, timesteps, mid_l).prev_sample
+        # prev_i = self.ddpm_scheduler.step(est_i, timesteps, mid_i).prev_sample
+        # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
 
         pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
@@ -471,8 +482,8 @@ class DDMMLightningModule(LightningModule):
         )
 
         # 2nd pass, unsupervised
-        mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
-        # prev_u = self.noise_scheduler.step(mid_u, timesteps, rng_u).prev_sample
+        mid_u = self.ddpm_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
+        # prev_u = self.ddpm_scheduler.step(mid_u, timesteps, rng_u).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = (
                 self.l1_loss(est_u, rng_u)  # blending image loss
@@ -506,7 +517,7 @@ class DDMMLightningModule(LightningModule):
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
                 sam_l = rng.clone().detach()
-                for i, t in enumerate(self.noise_scheduler.timesteps):
+                for i, t in enumerate(self.ddim_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
@@ -514,8 +525,8 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
-                    # sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
-                    # sam_l = self.noise_scheduler.step(res_l, t, sam_l).prev_sample
+                    # sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
+                    # sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
@@ -746,7 +757,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
-            early_stop_callback,
+            # early_stop_callback,
         ],
         # accumulate_grad_batches=4,
         strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
