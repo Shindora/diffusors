@@ -305,10 +305,10 @@ class DDMMLightningModule(LightningModule):
 
         # Create a scheduler
         self.ddpm_scheduler = CustomDDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda'
+            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda'
         )
         self.ddim_scheduler = CustomDDIMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True
+            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda', clip_sample=True
         )
 
         # The embedding layer will map the class label to a vector of size class_emb_size
