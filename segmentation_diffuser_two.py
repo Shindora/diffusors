@@ -501,7 +501,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if stage == 'train' and batch_idx % 20 == 0:
+        if batch_idx == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -578,7 +578,7 @@ class DDMMLightningModule(LightningModule):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
+    parser: ArgumentParser = ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--timesteps", type=int, default=100, help="timesteps")
     parser.add_argument("--batch_size", type=int, default=8, help="batch size")
@@ -771,12 +771,12 @@ if __name__ == "__main__":
         else None,  # "some/path/to/my_checkpoint.ckpt"
     )
 
-    trainer.test(
-        model,
-        datamodule,
-        ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None
-        else None,
-    )
+    # trainer.test(
+    #     model,
+    #     datamodule,
+    #     ckpt_path=hparams.ckpt
+    #     if hparams.ckpt is not None
+    #     else None,
+    # )
 
     # serve
