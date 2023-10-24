@@ -50,6 +50,7 @@ class CustomDDPMScheduler(DDPMScheduler):
     def to(self, device):
         self.alphas_cumprod = self.alphas_cumprod.to(device)
 
+
 class CustomDDIMScheduler(DDIMScheduler):
     def __init__(self, device, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -305,10 +306,10 @@ class DDMMLightningModule(LightningModule):
 
         # Create a scheduler
         self.ddpm_scheduler = CustomDDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda'
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda'
         )
         self.ddim_scheduler = CustomDDIMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", device='cuda', clip_sample=True
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True
         )
 
         # The embedding layer will map the class label to a vector of size class_emb_size
@@ -437,7 +438,7 @@ class DDMMLightningModule(LightningModule):
         )
 
         self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
-        self.dice_loss = DiceLoss(include_background=False, to_onehot_y=True, reduction="mean", batch=True)
+        self.dice_loss = DiceLoss(reduction="mean", batch=False)
         self.save_hyperparameters()
 
     def _common_step(
@@ -472,14 +473,16 @@ class DDMMLightningModule(LightningModule):
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
-                self.l1_loss(est_i, rng_p)  # blending image loss
-                + (1 - self.dice_loss(est_l, rng_p))  # blending label loss
+                hparams.alpha(self.l1_loss(est_i, rng_p)  # blending image loss
+                              + self.l1_loss(pred_image, mid_i)  # cycle image loss
+                              + self.l1_loss(pred_label, mid_l)  # cycle label loss
+                              + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
+
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
-                + self.l1_loss(mid_i, est_i)  # post-transition 1 step image loss
-                + (1 - self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
-                + self.l1_loss(pred_image, mid_i)  # cycle image loss
-                + self.l1_loss(pred_label, mid_l)  # cycle label loss
+                + hparams.gamma(self.dice_loss(est_l, rng_p)  # blending label loss
+                                + self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
+
         )
 
         # 2nd pass, unsupervised
@@ -526,8 +529,8 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
-                    # sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
-                    # sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
+                    sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
+                    sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
@@ -610,6 +613,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--epochs", type=int, default=31, help="number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
+    parser.add_argument("--alpha", type=float, default=1.0, help="vol loss")
+    parser.add_argument("--gamma", type=float, default=1.0, help="img loss")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
 
@@ -761,7 +766,7 @@ if __name__ == "__main__":
             # early_stop_callback,
         ],
         # accumulate_grad_batches=4,
-        strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=hparams.precision,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
