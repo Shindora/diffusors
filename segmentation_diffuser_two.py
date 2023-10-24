@@ -292,7 +292,7 @@ class DDMMLightningModule(LightningModule):
             num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", timestep_spacing='leading'
         )
         self.ddim_scheduler = DDIMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", clip_sample=True
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", clip_sample=True, timestep_spacing='leading'
         )
         self.ddim_scheduler.set_timesteps(num_inference_steps=100)
 
@@ -549,7 +549,7 @@ class DDMMLightningModule(LightningModule):
         return self._common_step(batch, batch_idx, optimizer_idx=0, stage="test")
 
     def _common_epoch_end(self, outputs, stage: Optional[str] = "common"):
-        loss = torch.stack([x[f"loss"] for x in outputs]).mean()
+        loss = torch.stack([x[f"loss"] for x in outputs]).nanmean()
         self.log(
             f"{stage}_loss_epoch",
             loss,
