@@ -308,7 +308,7 @@ class DDMMLightningModule(LightningModule):
 
         # Create a scheduler
         self.ddpm_scheduler = CustomDDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda'
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', timestep_spacing='leading'
         )
         self.ddim_scheduler = CustomDDIMScheduler(
             num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True
@@ -532,8 +532,8 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
-                    sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
-                    sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
+                    sam_i = self.ddpm_scheduler.step(res_i, t, sam_i).prev_sample
+                    sam_l = self.ddpm_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
