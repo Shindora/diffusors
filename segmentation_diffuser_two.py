@@ -300,6 +300,8 @@ class DDMMLightningModule(LightningModule):
         self.num_timesteps = hparams.timesteps
         self.batch_size = hparams.batch_size
         self.shape = hparams.shape
+        self.alpha = hparams.alpha
+        self.gamma = hparams.gamma
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
@@ -311,6 +313,7 @@ class DDMMLightningModule(LightningModule):
         self.ddim_scheduler = CustomDDIMScheduler(
             num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True
         )
+        self.ddim_scheduler.set_timesteps(num_inference_steps=100)
 
         # The embedding layer will map the class label to a vector of size class_emb_size
         self.diffusion_image = UNet2DModel(
@@ -473,15 +476,15 @@ class DDMMLightningModule(LightningModule):
         pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
-                hparams.alpha(self.l1_loss(est_i, rng_p)  # blending image loss
-                              + self.l1_loss(pred_image, mid_i)  # cycle image loss
-                              + self.l1_loss(pred_label, mid_l)  # cycle label loss
-                              + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
+                hparams.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
+                                 + self.l1_loss(pred_image, mid_i)  # cycle image loss
+                                 + self.l1_loss(pred_label, mid_l)  # cycle label loss
+                                 + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
 
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
-                + hparams.gamma(self.dice_loss(est_l, rng_p)  # blending label loss
-                                + self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
+                + hparams.gamma * (self.dice_loss(est_l, rng_p)  # blending label loss
+                                   + self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
 
         )
 
@@ -613,7 +616,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--epochs", type=int, default=31, help="number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
-    parser.add_argument("--alpha", type=float, default=1.0, help="vol loss")
+    parser.add_argument("--alpha", type=float, default=1.0, help="img loss")
     parser.add_argument("--gamma", type=float, default=1.0, help="img loss")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
