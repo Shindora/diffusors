@@ -41,25 +41,6 @@ from monai.transforms import (
 from diffusers import UNet2DModel, DDPMScheduler, DDIMScheduler
 
 
-class CustomDDPMScheduler(DDPMScheduler):
-    def __init__(self, device, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.device = device
-        self.to(device)
-
-    def to(self, device):
-        self.alphas_cumprod = self.alphas_cumprod.to(device)
-
-
-class CustomDDIMScheduler(DDIMScheduler):
-    def __init__(self, device, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.device = device
-        self.to(device)
-
-    def to(self, device):
-        self.alphas_cumprod = self.alphas_cumprod.to(device)
-
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
@@ -307,11 +288,11 @@ class DDMMLightningModule(LightningModule):
         self.timesteps = hparams.timesteps
 
         # Create a scheduler
-        self.ddpm_scheduler = CustomDDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', timestep_spacing='leading'
+        self.ddpm_scheduler = DDPMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", timestep_spacing='leading'
         )
-        self.ddim_scheduler = CustomDDIMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", device='cuda', clip_sample=True
+        self.ddim_scheduler = DDIMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="scaled_linear", clip_sample=True
         )
         self.ddim_scheduler.set_timesteps(num_inference_steps=100)
 
@@ -483,8 +464,8 @@ class DDMMLightningModule(LightningModule):
 
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
-                + hparams.gamma * (self.dice_loss(est_l, rng_p)  # blending label loss
-                                   + self.dice_loss(mid_l, est_l))  # post-transition 1 step label loss
+                + hparams.gamma * ((1 - self.dice_loss(est_l, rng_p))  # blending label loss
+                                   + (1 - self.dice_loss(mid_l, est_l)))  # post-transition 1 step label loss
 
         )
 
@@ -532,8 +513,10 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
-                    sam_i = self.ddpm_scheduler.step(res_i, t, sam_i).prev_sample
-                    sam_l = self.ddpm_scheduler.step(res_l, t, sam_l).prev_sample
+                    res_i = res_i.to(device=sam_i.device)
+                    res_l = res_l.to(device=sam_l.device)
+                    sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
+                    sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
