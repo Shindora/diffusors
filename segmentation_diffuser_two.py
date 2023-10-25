@@ -500,7 +500,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if batch_idx == 0:
+        if batch_idx % 100:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
@@ -521,8 +521,11 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
+                cycle_i = cycle_i * 0.5 + 0.5
+                cycle_l = cycle_l * 0.5 + 0.5
+
             viz2d = torch.cat(
-                [image, label, res_i, res_l, cycle_i, cycle_l, unsup], dim=-1
+                [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
             ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
