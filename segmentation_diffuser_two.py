@@ -729,7 +729,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor="validation_loss_epoch",  # The quantity to be monitored
         min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
-        patience=5,  # Number of epochs with no improvement after which training will be stopped
+        patience=7,  # Number of epochs with no improvement after which training will be stopped
         verbose=True,  # Whether to print logs in stdout
         mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
     )
@@ -753,7 +753,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
-            # early_stop_callback,
+            early_stop_callback,
         ],
         # accumulate_grad_batches=4,
         strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
