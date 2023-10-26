@@ -271,6 +271,61 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         return self.val_loader
 
 
+    def test_dataloader(self):
+        self.test_transforms = Compose(
+            [
+                LoadImaged(keys=["image", "label"], ensure_channel_first=True),
+                # AddChanneld(keys=["image", "label", "unsup"],),
+                ScaleIntensityRanged(
+                    keys=["label"], a_min=0, a_max=128, b_min=0, b_max=1, clip=False
+                ),
+                ScaleIntensityd(
+                    keys=["image", "label"],
+                    minv=0.0,
+                    maxv=1.0,
+                ),
+                # CropForegroundd(keys=["image", "label", "unsup"], source_key="image", select_fn=(lambda x: x>0), margin=0),
+                HistogramNormalized(
+                    keys=["image"],
+                    min=0.0,
+                    max=1.0,
+                ),
+                Resized(
+                    keys=["image", "label"],
+                    spatial_size=256,
+                    size_mode="longest",
+                    mode=["area", "nearest", "area"],
+                ),
+                DivisiblePadd(
+                    keys=["image", "label"],
+                    k=256,
+                    mode="constant",
+                    constant_values=0,
+                ),
+                ToTensord(
+                    keys=["image", "label"],
+                ),
+            ]
+        )
+
+        self.test_datasets = PairedAndUnsupervisedDataset(
+            keys=["image", "label"],
+            data=[self.test_image_files, self.test_label_files],
+            transform=self.test_transforms,
+            length=self.test_samples,
+            batch_size=self.batch_size,
+        )
+
+        self.test_loader = DataLoader(
+            self.test_datasets,
+            batch_size=self.batch_size,
+            num_workers=8,
+            collate_fn=list_data_collate,
+            shuffle=True,
+        )
+        return self.test_loader
+
+
 class DDMMLightningModule(LightningModule):
     def __init__(self, hparams, *kwargs) -> None:
         super().__init__()
@@ -770,20 +825,20 @@ if __name__ == "__main__":
         # deterministic=False,
         # profiler="simple",
     )
-    trainer.fit(
-        model,
-        datamodule,  # ,
-        ckpt_path=hparams.ckpt
-        if hparams.ckpt is not None
-        else None,  # "some/path/to/my_checkpoint.ckpt"
-    )
-
-    # trainer.test(
+    # trainer.fit(
     #     model,
-    #     datamodule,
+    #     datamodule,  # ,
     #     ckpt_path=hparams.ckpt
     #     if hparams.ckpt is not None
-    #     else None,
+    #     else None,  # "some/path/to/my_checkpoint.ckpt"
     # )
+
+    trainer.test(
+        model,
+        datamodule,
+        ckpt_path=hparams.ckpt
+        if hparams.ckpt is not None
+        else None,
+    )
 
     # serve
