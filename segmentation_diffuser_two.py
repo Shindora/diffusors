@@ -784,7 +784,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor="validation_loss_epoch",  # The quantity to be monitored
         min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
-        patience=7,  # Number of epochs with no improvement after which training will be stopped
+        patience=10,  # Number of epochs with no improvement after which training will be stopped
         verbose=True,  # Whether to print logs in stdout
         mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
     )
@@ -825,20 +825,20 @@ if __name__ == "__main__":
         # deterministic=False,
         # profiler="simple",
     )
-    # trainer.fit(
-    #     model,
-    #     datamodule,  # ,
-    #     ckpt_path=hparams.ckpt
-    #     if hparams.ckpt is not None
-    #     else None,  # "some/path/to/my_checkpoint.ckpt"
-    # )
-
-    trainer.test(
+    trainer.fit(
         model,
-        datamodule,
+        datamodule,  # ,
         ckpt_path=hparams.ckpt
         if hparams.ckpt is not None
-        else None,
+        else None,  # "some/path/to/my_checkpoint.ckpt"
     )
+
+    # trainer.test(
+    #     model,
+    #     datamodule,
+    #     ckpt_path=hparams.ckpt
+    #     if hparams.ckpt is not None
+    #     else None,
+    # )
 
     # serve
