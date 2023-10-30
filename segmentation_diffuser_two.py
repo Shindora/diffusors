@@ -311,7 +311,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
 
         self.test_datasets = PairedAndUnsupervisedDataset(
             keys=["image", "label", "unsup"],
-            data=[self.test_image_files, self.test_label_files],
+            data=[self.test_image_files, self.test_label_files, self.test_unsup_files],
             transform=self.test_transforms,
             length=self.test_samples,
             batch_size=self.batch_size,
