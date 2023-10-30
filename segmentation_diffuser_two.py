@@ -1,5 +1,6 @@
 import glob
 import os
+from abc import ABC
 from typing import Optional, Sequence, Callable
 
 import torch
@@ -41,7 +42,7 @@ from monai.transforms import (
 from diffusers import UNet2DModel, DDPMScheduler, DDIMScheduler
 
 
-class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
+class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable, ABC):
     def __init__(
             self,
             keys: Sequence,
@@ -274,42 +275,42 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
     def test_dataloader(self):
         self.test_transforms = Compose(
             [
-                LoadImaged(keys=["image", "label"], ensure_channel_first=True),
+                LoadImaged(keys=["image", "label", "unsup"], ensure_channel_first=True),
                 # AddChanneld(keys=["image", "label", "unsup"],),
                 ScaleIntensityRanged(
                     keys=["label"], a_min=0, a_max=128, b_min=0, b_max=1, clip=False
                 ),
                 ScaleIntensityd(
-                    keys=["image", "label"],
+                    keys=["image", "label", "unsup"],
                     minv=0.0,
                     maxv=1.0,
                 ),
                 # CropForegroundd(keys=["image", "label", "unsup"], source_key="image", select_fn=(lambda x: x>0), margin=0),
                 HistogramNormalized(
-                    keys=["image"],
+                    keys=["image", "unsup"],
                     min=0.0,
                     max=1.0,
                 ),
                 Resized(
-                    keys=["image", "label"],
+                    keys=["image", "label", "unsup"],
                     spatial_size=256,
                     size_mode="longest",
                     mode=["area", "nearest", "area"],
                 ),
                 DivisiblePadd(
-                    keys=["image", "label"],
+                    keys=["image", "label", "unsup"],
                     k=256,
                     mode="constant",
                     constant_values=0,
                 ),
                 ToTensord(
-                    keys=["image", "label"],
+                    keys=["image", "label", "unsup"],
                 ),
             ]
         )
 
         self.test_datasets = PairedAndUnsupervisedDataset(
-            keys=["image", "label"],
+            keys=["image", "label", "unsup"],
             data=[self.test_image_files, self.test_label_files],
             transform=self.test_transforms,
             length=self.test_samples,
@@ -321,7 +322,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=8,
             collate_fn=list_data_collate,
-            shuffle=True,
+            shuffle=False,
         )
         return self.test_loader
 
