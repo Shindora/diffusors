@@ -271,7 +271,6 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
         )
         return self.val_loader
 
-
     def test_dataloader(self):
         self.test_transforms = Compose(
             [
@@ -510,14 +509,16 @@ class DDMMLightningModule(LightningModule):
         # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
 
         pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
-        pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
+        # pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
 
         super_loss = (
                 hparams.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
                                  + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
 
-                + hparams.beta * (self.l1_loss(pred_image, image)  # cycle image loss
-                                  + self.l1_loss(pred_label, label))  # cycle label loss)
+                + hparams.beta * (
+                    self.l1_loss(pred_label, label)  # cycle label loss)
+                    # + self.l1_loss(pred_image, image)  # cycle image loss
+                )
 
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
