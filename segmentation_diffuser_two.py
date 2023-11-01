@@ -516,10 +516,12 @@ class DDMMLightningModule(LightningModule):
                 hparams.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
                                  + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
 
-                + hparams.beta * (self.l1_loss(pred_image, mid_i)  # cycle image loss
-                                  + self.l1_loss(pred_label, mid_l))  # cycle label loss)
+                + hparams.beta * (self.l1_loss(pred_image, image)  # cycle image loss
+                                  + self.l1_loss(pred_label, label))  # cycle label loss)
+
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
                 # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
+
                 + hparams.gamma * (self.l1_loss(est_l, rng_p)  # blending label loss
                                    + self.l1_loss(mid_l, est_l))  # post-transition 1 step label loss
 
