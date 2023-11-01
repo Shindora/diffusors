@@ -508,8 +508,8 @@ class DDMMLightningModule(LightningModule):
         # prev_i = self.ddpm_scheduler.step(est_i, timesteps, mid_i).prev_sample
         # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
 
-        pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
-        # pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
+        pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
+        pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
 
         super_loss = (
                 hparams.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
@@ -517,7 +517,7 @@ class DDMMLightningModule(LightningModule):
 
                 + hparams.beta * (
                     self.l1_loss(pred_label, label)  # cycle label loss)
-                    # + self.l1_loss(pred_image, image)  # cycle image loss
+                    + self.l1_loss(pred_image, image)  # cycle image loss
                 )
 
                 # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
