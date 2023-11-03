@@ -338,6 +338,7 @@ class DDMMLightningModule(LightningModule):
         self.alpha = hparams.alpha
         self.beta = hparams.beta
         self.gamma = hparams.gamma
+        self.is_use_cycle = hparams.is_use_cycle
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
@@ -413,68 +414,68 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
+        if self.is_use_cycle:
+            self.diffusion_label = UNet2DModel(
+                sample_size=self.shape,  # the target image resolution
+                in_channels=1,  # the number of input channels, 3 for RGB images
+                out_channels=1,  # the number of output channels
+                layers_per_block=2,  # how many ResNet layers to use per UNet block
+                block_out_channels=(
+                    128,
+                    128,
+                    256,
+                    256,
+                    512,
+                    512,
+                ),  # the number of output channes for each UNet block
+                down_block_types=(
+                    "DownBlock2D",  # a regular ResNet downsampling block
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+                    "DownBlock2D",
+                ),
+                up_block_types=(
+                    "UpBlock2D",  # a regular ResNet upsampling block
+                    "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                ),
+            )
 
-        self.diffusion_label = UNet2DModel(
-            sample_size=self.shape,  # the target image resolution
-            in_channels=1,  # the number of input channels, 3 for RGB images
-            out_channels=1,  # the number of output channels
-            layers_per_block=2,  # how many ResNet layers to use per UNet block
-            block_out_channels=(
-                128,
-                128,
-                256,
-                256,
-                512,
-                512,
-            ),  # the number of output channes for each UNet block
-            down_block_types=(
-                "DownBlock2D",  # a regular ResNet downsampling block
-                "DownBlock2D",
-                "DownBlock2D",
-                "DownBlock2D",
-                "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
-                "DownBlock2D",
-            ),
-            up_block_types=(
-                "UpBlock2D",  # a regular ResNet upsampling block
-                "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
-                "UpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-            ),
-        )
-
-        self.diffusion_from_label_to_image = UNet2DModel(
-            sample_size=self.shape,  # the target image resolution
-            in_channels=1,  # the number of input channels, 3 for RGB images
-            out_channels=1,  # the number of output channels
-            layers_per_block=2,  # how many ResNet layers to use per UNet block
-            block_out_channels=(
-                128,
-                128,
-                256,
-                256,
-                512,
-                512,
-            ),  # the number of output channes for each UNet block
-            down_block_types=(
-                "DownBlock2D",  # a regular ResNet downsampling block
-                "DownBlock2D",
-                "DownBlock2D",
-                "DownBlock2D",
-                "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
-                "DownBlock2D",
-            ),
-            up_block_types=(
-                "UpBlock2D",  # a regular ResNet upsampling block
-                "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
-                "UpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-            ),
-        )
+            self.diffusion_from_label_to_image = UNet2DModel(
+                sample_size=self.shape,  # the target image resolution
+                in_channels=1,  # the number of input channels, 3 for RGB images
+                out_channels=1,  # the number of output channels
+                layers_per_block=2,  # how many ResNet layers to use per UNet block
+                block_out_channels=(
+                    128,
+                    128,
+                    256,
+                    256,
+                    512,
+                    512,
+                ),  # the number of output channes for each UNet block
+                down_block_types=(
+                    "DownBlock2D",  # a regular ResNet downsampling block
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+                    "DownBlock2D",
+                ),
+                up_block_types=(
+                    "UpBlock2D",  # a regular ResNet upsampling block
+                    "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                ),
+            )
 
         self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
         self.dice_loss = DiceLoss(reduction="mean", batch=False)
@@ -507,26 +508,22 @@ class DDMMLightningModule(LightningModule):
 
         # prev_i = self.ddpm_scheduler.step(est_i, timesteps, mid_i).prev_sample
         # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
-
-        pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
-        pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
+        if self.is_use_cycle:
+            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
+            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
 
         super_loss = (
-                hparams.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
-                                 + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
-
-                + hparams.beta * (
-                    self.l1_loss(pred_label, label)  # cycle label loss)
-                    + self.l1_loss(pred_image, image)  # cycle image loss
-                )
-
-                # + self.l1_loss(prev_i, mid_i)  # pre-transition 1 step image loss
-                # + self.dice_loss(prev_l, mid_l)  # pre-transition 1 step label loss
-
-                + hparams.gamma * (self.l1_loss(est_l, rng_p)  # blending label loss
-                                   + self.l1_loss(mid_l, est_l))  # post-transition 1 step label loss
-
+                self.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
+                              + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
+                + self.gamma * (self.l1_loss(est_l, rng_p)  # blending label loss
+                                + self.l1_loss(mid_l, est_l))  # post-transition 1 step label loss
         )
+
+        if self.is_use_cycle:
+            super_loss += self.beta * self.is_use_cycle * (
+                    self.l1_loss(pred_image, rng_p)
+                    + self.l1_loss(pred_label, label)
+            )
 
         # 2nd pass, unsupervised
         mid_u = self.ddpm_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
@@ -568,8 +565,9 @@ class DDMMLightningModule(LightningModule):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    cycle_i = self.diffusion_from_label_to_image(res_l, t).sample
-                    cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
+                    if self.is_use_cycle:
+                        cycle_i = self.diffusion_from_label_to_image(res_l, t).sample
+                        cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
                     # Update sample with step
                     res_i = res_i.to(device=sam_i.device)
@@ -580,12 +578,14 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-                cycle_i = cycle_i * 0.5 + 0.5
-                cycle_l = cycle_l * 0.5 + 0.5
-
-            viz2d = torch.cat(
-                [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
-            ).transpose(2, 3)
+            if self.is_use_cycle:
+                viz2d = torch.cat(
+                    [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
+                ).transpose(2, 3)
+            else:
+                viz2d = torch.cat(
+                    [image, label, sam_i, sam_l, unsup], dim=-1
+                ).transpose(2, 3)
             grid = torchvision.utils.make_grid(
                 viz2d, normalize=False, scale_each=False, nrow=8, padding=0
             )
@@ -666,6 +666,7 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=float, default=1.0, help="img loss")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
+    parser.add_argument("--is_use_cycle", type=bool, default=True, help="Use cycle concistency to training")
 
     parser.add_argument(
         "--accelerator", type=str, default="gpu", help="accelerator instances"
