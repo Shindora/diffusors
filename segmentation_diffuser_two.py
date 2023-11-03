@@ -556,12 +556,12 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if batch_idx == 0:
+        if stage == 'train' and batch_idx % 50:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
                 sam_l = rng.clone().detach()
-                for i, t in enumerate(self.ddim_scheduler.timesteps):
+                for i, t in enumerate(self.ddpm_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
@@ -572,8 +572,8 @@ class DDMMLightningModule(LightningModule):
                     # Update sample with step
                     res_i = res_i.to(device=sam_i.device)
                     res_l = res_l.to(device=sam_l.device)
-                    sam_i = self.ddim_scheduler.step(res_i, t, sam_i).prev_sample
-                    sam_l = self.ddim_scheduler.step(res_l, t, sam_l).prev_sample
+                    sam_i = self.ddpm_scheduler.step(res_i, t, sam_i).prev_sample
+                    sam_l = self.ddpm_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
