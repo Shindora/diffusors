@@ -530,7 +530,7 @@ class DDMMLightningModule(LightningModule):
         # prev_u = self.ddpm_scheduler.step(mid_u, timesteps, rng_u).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = (
-                self.l1_loss(est_u, rng_u)  # blending image loss
+                # self.l1_loss(est_u, rng_u)  # blending image loss
                 # + self.l1_loss(prev_u, mid_u)  # unpaired pre-transition 1 step loss
                 + self.l1_loss(mid_u, est_u)  # unpaired post-transition 1 step loss
         )
@@ -561,7 +561,7 @@ class DDMMLightningModule(LightningModule):
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
                 sam_l = rng.clone().detach()
-                for i, t in enumerate(self.ddim_scheduler.timesteps):
+                for i, t in enumerate(self.ddpm_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
