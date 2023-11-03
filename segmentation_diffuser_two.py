@@ -338,7 +338,6 @@ class DDMMLightningModule(LightningModule):
         self.alpha = hparams.alpha
         self.beta = hparams.beta
         self.gamma = hparams.gamma
-        self.is_use_cycle = hparams.is_use_cycle
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
@@ -384,7 +383,7 @@ class DDMMLightningModule(LightningModule):
             ),
         )
 
-        self.diffusion_from_image_to_label = UNet2DModel(
+        self.diffusion_label = UNet2DModel(
             sample_size=self.shape,  # the target image resolution
             in_channels=1,  # the number of input channels, 3 for RGB images
             out_channels=1,  # the number of output channels
@@ -414,8 +413,9 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
-        if self.is_use_cycle:
-            self.diffusion_label = UNet2DModel(
+
+        if hparams.is_use_cycle:
+            self.diffusion_from_image_to_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
                 out_channels=1,  # the number of output channels
@@ -508,7 +508,7 @@ class DDMMLightningModule(LightningModule):
 
         # prev_i = self.ddpm_scheduler.step(est_i, timesteps, mid_i).prev_sample
         # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
-        if self.is_use_cycle:
+        if hparams.is_use_cycle:
             pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
             pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
 
@@ -519,8 +519,8 @@ class DDMMLightningModule(LightningModule):
                                 + self.l1_loss(mid_l, est_l))  # post-transition 1 step label loss
         )
 
-        if self.is_use_cycle:
-            super_loss += self.beta * self.is_use_cycle * (
+        if hparams.is_use_cycle:
+            super_loss += self.beta * hparams.is_use_cycle * (
                     self.l1_loss(pred_image, rng_p)
                     + self.l1_loss(pred_label, label)
             )
@@ -530,9 +530,9 @@ class DDMMLightningModule(LightningModule):
         # prev_u = self.ddpm_scheduler.step(mid_u, timesteps, rng_u).prev_sample
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = (
-                # self.l1_loss(est_u, rng_u)  # blending image loss
-                # + self.l1_loss(prev_u, mid_u)  # unpaired pre-transition 1 step loss
-                + self.l1_loss(mid_u, est_u)  # unpaired post-transition 1 step loss
+            # self.l1_loss(est_u, rng_u)  # blending image loss
+            # + self.l1_loss(prev_u, mid_u)  # unpaired pre-transition 1 step loss
+            + self.l1_loss(mid_u, est_u)  # unpaired post-transition 1 step loss
         )
 
         self.log(
@@ -561,11 +561,11 @@ class DDMMLightningModule(LightningModule):
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
                 sam_l = rng.clone().detach()
-                for i, t in enumerate(self.ddpm_scheduler.timesteps):
+                for i, t in enumerate(self.ddim_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    if self.is_use_cycle:
+                    if hparams.is_use_cycle:
                         cycle_i = self.diffusion_from_label_to_image(res_l, t).sample
                         cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
 
@@ -578,7 +578,7 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            if self.is_use_cycle:
+            if hparams.is_use_cycle:
                 viz2d = torch.cat(
                     [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
                 ).transpose(2, 3)
