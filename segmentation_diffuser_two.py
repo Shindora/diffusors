@@ -666,7 +666,7 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=float, default=1.0, help="img loss")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--is_use_cycle", type=bool, default=True, help="Use cycle concistency to training")
+    parser.add_argument("--is_use_cycle", type=bool, default=False, help="Use cycle concistency to training")
 
     parser.add_argument(
         "--accelerator", type=str, default="gpu", help="accelerator instances"
