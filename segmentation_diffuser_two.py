@@ -9,9 +9,6 @@ import torch.nn.functional as F
 import torchvision
 import wandb
 
-# Finish the current wandb run if any
-wandb.finish()
-wandb.login()
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
