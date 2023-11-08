@@ -454,8 +454,8 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-        pred_label = self.diffusion_from_image_to_label.forward(mid_i, timesteps).sample
-        pred_image = self.diffusion_from_label_to_image.forward(mid_l, timesteps).sample
+        pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
+        pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
 
         super_loss = (
             self.loss_func(est_i, rng_p)
@@ -490,7 +490,7 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if batch_idx % 20 == 0:
+        if batch_idx == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
