@@ -14,7 +14,7 @@ from argparse import ArgumentParser
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
@@ -749,6 +749,13 @@ if __name__ == "__main__":
         every_n_epochs=1,
     )
     lr_callback = LearningRateMonitor(logging_interval="step")
+    early_stop_callback = EarlyStopping(
+        monitor="validation_loss_epoch",  # The quantity to be monitored
+        min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
+        patience=10,  # Number of epochs with no improvement after which training will be stopped
+        verbose=True,  # Whether to print logs in stdout
+        mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
+    )
     # Logger
     wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
     wandb_logger = WandbLogger(
@@ -763,6 +770,7 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
+            early_stop_callback
         ],
         # accumulate_grad_batches=4,
         # strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
