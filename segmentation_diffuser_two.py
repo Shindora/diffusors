@@ -500,6 +500,8 @@ class DDMMLightningModule(LightningModule):
                     cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
                     # Update sample with step
+                    res_i = res_i.to(device=sam_i.device)
+                    res_l = res_l.to(device=sam_l.device)
                     sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
                     sam_l = self.noise_scheduler.step(res_l, t, sam_l).prev_sample
 
