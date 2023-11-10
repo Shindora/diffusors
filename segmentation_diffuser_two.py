@@ -38,7 +38,7 @@ from monai.transforms import (
 # from data import CustomDataModule
 # from cdiff import *
 from diffusers import UNet2DModel, DDPMScheduler
-
+from loss_function.dice_loss import dice_coef_loss
 
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
@@ -333,7 +333,6 @@ class DDMMLightningModule(LightningModule):
         self.num_timesteps = hparams.timesteps
         self.batch_size = hparams.batch_size
         self.shape = hparams.shape
-        self.is_use_cycle = hparams.is_use_cycle
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
@@ -495,16 +494,15 @@ class DDMMLightningModule(LightningModule):
 
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
-        if self.is_use_cycle:
-            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
-            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
 
         super_loss = (
             self.loss_func(est_i, rng_p)
             + self.loss_func(est_l, rng_p)
         )
 
-        if self.is_use_cycle:
+        if hparams.is_use_cycle:
+            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
+            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
             super_loss += (
                     self.loss_func(pred_image, mid_i)
                     + self.loss_func(pred_label, mid_l)
@@ -545,7 +543,7 @@ class DDMMLightningModule(LightningModule):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    if self.is_use_cycle:
+                    if hparams.is_use_cycle:
                         cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
                         cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
@@ -558,7 +556,7 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            if self.is_use_cycle:
+            if hparams.is_use_cycle:
                 viz2d = torch.cat(
                     [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
                 ).transpose(2, 3)
