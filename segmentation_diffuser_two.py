@@ -404,7 +404,7 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
-        if self.is_use_cycle:
+        if hparams.is_use_cycle:
             self.diffusion_from_image_to_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
