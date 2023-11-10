@@ -333,6 +333,7 @@ class DDMMLightningModule(LightningModule):
         self.num_timesteps = hparams.timesteps
         self.batch_size = hparams.batch_size
         self.shape = hparams.shape
+        self.is_use_cycle = hparams.is_use_cycle
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
@@ -404,7 +405,7 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
-        if hparams.is_use_cycle:
+        if self.is_use_cycle:
             self.diffusion_from_image_to_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -495,12 +496,14 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
+
+
         super_loss = (
             self.loss_func(est_i, rng_p)
             + self.loss_func(est_l, rng_p)
         )
 
-        if hparams.is_use_cycle:
+        if self.is_use_cycle:
             pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
             pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
             super_loss += (
@@ -543,7 +546,7 @@ class DDMMLightningModule(LightningModule):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    if hparams.is_use_cycle:
+                    if self.is_use_cycle:
                         cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
                         cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
@@ -556,7 +559,7 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            if hparams.is_use_cycle:
+            if self.is_use_cycle:
                 viz2d = torch.cat(
                     [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
                 ).transpose(2, 3)
@@ -641,7 +644,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--is_use_cycle", type=bool, default=False, help="Use cycle prediction")
+    parser.add_argument("--is_use_cycle", type=bool, default=True, help="Use cycle prediction")
 
     parser.add_argument(
         "--accelerator", type=str, default="gpu", help="accelerator instances"
