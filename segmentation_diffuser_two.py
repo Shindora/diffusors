@@ -17,7 +17,6 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-
 import monai
 from monai.data import Dataset, CacheDataset, DataLoader
 from monai.data import list_data_collate, decollate_batch
@@ -40,14 +39,15 @@ from monai.transforms import (
 from diffusers import UNet2DModel, DDPMScheduler
 from loss_function.dice_loss import dice_coef_loss
 
+
 class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
-        self,
-        keys: Sequence,
-        data: Sequence,
-        transform: Optional[Callable] = None,
-        length: Optional[Callable] = None,
-        batch_size: int = 32,
+            self,
+            keys: Sequence,
+            data: Sequence,
+            transform: Optional[Callable] = None,
+            length: Optional[Callable] = None,
+            batch_size: int = 32,
     ) -> None:
         self.keys = keys
         self.data = data
@@ -81,21 +81,21 @@ class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomiz
 
 class PairedAndUnsupervisedDataModule(LightningDataModule):
     def __init__(
-        self,
-        train_image_dirs: str = "path/to/dir",
-        train_label_dirs: str = "path/to/dir",
-        train_unsup_dirs: str = "path/to/dir",
-        val_image_dirs: str = "path/to/dir",
-        val_label_dirs: str = "path/to/dir",
-        val_unsup_dirs: str = "path/to/dir",
-        test_image_dirs: str = "path/to/dir",
-        test_label_dirs: str = "path/to/dir",
-        test_unsup_dirs: str = "path/to/dir",
-        shape: int = 256,
-        batch_size: int = 32,
-        train_samples: int = 4000,
-        val_samples: int = 800,
-        test_samples: int = 800,
+            self,
+            train_image_dirs: str = "path/to/dir",
+            train_label_dirs: str = "path/to/dir",
+            train_unsup_dirs: str = "path/to/dir",
+            val_image_dirs: str = "path/to/dir",
+            val_label_dirs: str = "path/to/dir",
+            val_unsup_dirs: str = "path/to/dir",
+            test_image_dirs: str = "path/to/dir",
+            test_label_dirs: str = "path/to/dir",
+            test_unsup_dirs: str = "path/to/dir",
+            shape: int = 256,
+            batch_size: int = 32,
+            train_samples: int = 4000,
+            val_samples: int = 800,
+            test_samples: int = 800,
     ):
         super().__init__()
 
@@ -212,6 +212,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=16,
             collate_fn=list_data_collate,
             shuffle=True,
+            persistent_workers=True,
         )
         return self.train_loader
 
@@ -266,6 +267,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=8,
             collate_fn=list_data_collate,
             shuffle=True,
+            persistent_workers=True,
         )
         return self.val_loader
 
@@ -320,6 +322,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=8,
             collate_fn=list_data_collate,
             shuffle=False,
+            persistent_workers=True,
         )
         return self.test_loader
 
@@ -472,7 +475,7 @@ class DDMMLightningModule(LightningModule):
         self.save_hyperparameters()
 
     def _common_step(
-        self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
+            self, batch, batch_idx, optimizer_idx, stage: Optional[str] = "common"
     ):
         image, label, unsup = batch["image"], batch["label"], batch["unsup"]
         _device = image.device
@@ -496,11 +499,9 @@ class DDMMLightningModule(LightningModule):
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-
-
         super_loss = (
-            self.loss_func(est_i, rng_p)
-            + self.loss_func(est_l, rng_p)
+                self.loss_func(est_i, rng_p)
+                + self.loss_func(est_l, rng_p)
         )
 
         if self.is_use_cycle:
