@@ -1,29 +1,26 @@
-import glob
 import os
-from abc import ABC
-from typing import Optional, Sequence, Callable
+import glob
 
+from typing import Optional, Union, List, Dict, Sequence, Callable
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 import torchvision
 import wandb
 
-# Finish the current wandb run if any
-# wandb.finish()
-# wandb.login()
 from argparse import ArgumentParser
 
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 import monai
-from monai.data import DataLoader
-from monai.data import list_data_collate
-from monai.utils import set_determinism
-from monai.losses.dice import DiceLoss
+from monai.data import Dataset, CacheDataset, DataLoader
+from monai.data import list_data_collate, decollate_batch
+from monai.utils import first, set_determinism, get_seed, MAX_SEED
 from monai.transforms import (
     apply_transform,
     Compose,
@@ -39,10 +36,11 @@ from monai.transforms import (
 
 # from data import CustomDataModule
 # from cdiff import *
-from diffusers import UNet2DModel, DDPMScheduler, DDIMScheduler
+from diffusers import UNet2DModel, DDPMScheduler
+from loss_function.dice_loss import dice_coef_loss
 
 
-class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable, ABC):
+class PairedAndUnsupervisedDataset(monai.data.Dataset, monai.transforms.Randomizable):
     def __init__(
             self,
             keys: Sequence,
@@ -214,6 +212,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=16,
             collate_fn=list_data_collate,
             shuffle=True,
+            persistent_workers=True,
         )
         return self.train_loader
 
@@ -268,6 +267,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=8,
             collate_fn=list_data_collate,
             shuffle=True,
+            persistent_workers=True,
         )
         return self.val_loader
 
@@ -322,6 +322,7 @@ class PairedAndUnsupervisedDataModule(LightningDataModule):
             num_workers=8,
             collate_fn=list_data_collate,
             shuffle=False,
+            persistent_workers=True,
         )
         return self.test_loader
 
@@ -335,21 +336,15 @@ class DDMMLightningModule(LightningModule):
         self.num_timesteps = hparams.timesteps
         self.batch_size = hparams.batch_size
         self.shape = hparams.shape
-        self.alpha = hparams.alpha
-        self.beta = hparams.beta
-        self.gamma = hparams.gamma
+        self.is_use_cycle = hparams.is_use_cycle
 
         self.num_classes = 2
         self.timesteps = hparams.timesteps
 
         # Create a scheduler
-        self.ddpm_scheduler = DDPMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", timestep_spacing='leading'
+        self.noise_scheduler = DDPMScheduler(
+            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2"
         )
-        self.ddim_scheduler = DDIMScheduler(
-            num_train_timesteps=self.timesteps, beta_schedule="squaredcos_cap_v2", timestep_spacing='leading'
-        )
-        self.ddim_scheduler.set_timesteps(num_inference_steps=100)
 
         # The embedding layer will map the class label to a vector of size class_emb_size
         self.diffusion_image = UNet2DModel(
@@ -413,8 +408,7 @@ class DDMMLightningModule(LightningModule):
                 "UpBlock2D",
             ),
         )
-
-        if hparams.is_use_cycle:
+        if self.is_use_cycle:
             self.diffusion_from_image_to_label = UNet2DModel(
                 sample_size=self.shape,  # the target image resolution
                 in_channels=1,  # the number of input channels, 3 for RGB images
@@ -477,8 +471,7 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
-        self.dice_loss = DiceLoss(reduction="mean", batch=False)
+        self.loss_func = nn.SmoothL1Loss(reduction="mean", beta=0.02)
         self.save_hyperparameters()
 
     def _common_step(
@@ -494,46 +487,35 @@ class DDMMLightningModule(LightningModule):
 
         # Sample a random timestep for each image
         timesteps = torch.randint(
-            0, self.ddpm_scheduler.num_train_timesteps, (bs,), device=_device
+            0, self.noise_scheduler.num_train_timesteps, (bs,), device=_device
         ).long()
 
         # 1st pass, supervised
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        mid_i = self.ddpm_scheduler.add_noise(image * 2.0 - 1.0, rng_p, timesteps)
-        mid_l = self.ddpm_scheduler.add_noise(label * 2.0 - 1.0, rng_p, timesteps)
+        mid_i = self.noise_scheduler.add_noise(image * 2.0 - 1.0, rng_p, timesteps)
+        mid_l = self.noise_scheduler.add_noise(label * 2.0 - 1.0, rng_p, timesteps)
 
         est_i = self.diffusion_image.forward(mid_i, timesteps).sample
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
-        # prev_i = self.ddpm_scheduler.step(est_i, timesteps, mid_i).prev_sample
-        # prev_l = self.ddpm_scheduler.step(est_l, timesteps, mid_l).prev_sample
-        if hparams.is_use_cycle:
-            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
-            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
-
         super_loss = (
-                self.alpha * (self.l1_loss(est_i, rng_p)  # blending image loss
-                              + self.l1_loss(mid_i, est_i))  # post-transition 1 step image loss
-                + self.gamma * (self.l1_loss(est_l, rng_p)  # blending label loss
-                                + self.l1_loss(mid_l, est_l))  # post-transition 1 step label loss
+                self.loss_func(est_i, rng_p)
+                + self.loss_func(est_l, rng_p)
         )
 
-        if hparams.is_use_cycle:
-            super_loss += self.beta * hparams.is_use_cycle * (
-                    self.l1_loss(pred_image, rng_p)
-                    + self.l1_loss(pred_label, label)
+        if self.is_use_cycle:
+            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
+            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
+            super_loss += (
+                    self.loss_func(pred_image, mid_i)
+                    + self.loss_func(pred_label, mid_l)
             )
 
         # 2nd pass, unsupervised
-        mid_u = self.ddpm_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
-        # prev_u = self.ddpm_scheduler.step(mid_u, timesteps, rng_u).prev_sample
+        mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
-        unsup_loss = (
-            # self.l1_loss(est_u, rng_u)  # blending image loss
-            # + self.l1_loss(prev_u, mid_u)  # unpaired pre-transition 1 step loss
-            + self.l1_loss(mid_u, est_u)  # unpaired post-transition 1 step loss
-        )
+        unsup_loss = self.loss_func(est_u, rng_u)
 
         self.log(
             f"{stage}_super_loss",
@@ -556,29 +538,29 @@ class DDMMLightningModule(LightningModule):
 
         loss = super_loss + unsup_loss
 
-        if stage == 'train' and batch_idx == 0:
+        if batch_idx == 0:
             with torch.no_grad():
                 rng = torch.randn_like(image)
                 sam_i = rng.clone().detach()
                 sam_l = rng.clone().detach()
-                for i, t in enumerate(self.ddpm_scheduler.timesteps):
+                for i, t in enumerate(self.noise_scheduler.timesteps):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    if hparams.is_use_cycle:
-                        cycle_i = self.diffusion_from_label_to_image(res_l, t).sample
-                        cycle_l = self.diffusion_from_image_to_label(res_i, t).sample
+                    if self.is_use_cycle:
+                        cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
+                        cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
 
                     # Update sample with step
                     res_i = res_i.to(device=sam_i.device)
                     res_l = res_l.to(device=sam_l.device)
-                    sam_i = self.ddpm_scheduler.step(res_i, t, sam_i).prev_sample
-                    sam_l = self.ddpm_scheduler.step(res_l, t, sam_l).prev_sample
+                    sam_i = self.noise_scheduler.step(res_i, t, sam_i).prev_sample
+                    sam_l = self.noise_scheduler.step(res_l, t, sam_l).prev_sample
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
 
-            if hparams.is_use_cycle:
+            if self.is_use_cycle:
                 viz2d = torch.cat(
                     [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
                 ).transpose(2, 3)
@@ -641,7 +623,7 @@ class DDMMLightningModule(LightningModule):
 
 
 if __name__ == "__main__":
-    parser: ArgumentParser = ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--timesteps", type=int, default=100, help="timesteps")
     parser.add_argument("--batch_size", type=int, default=8, help="batch size")
@@ -661,12 +643,9 @@ if __name__ == "__main__":
 
     parser.add_argument("--epochs", type=int, default=31, help="number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
-    parser.add_argument("--alpha", type=float, default=1.0, help="img loss")
-    parser.add_argument("--beta", type=float, default=1.0, help="img loss")
-    parser.add_argument("--gamma", type=float, default=1.0, help="img loss")
     parser.add_argument("--ckpt", type=str, default=None, help="path to checkpoint")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--is_use_cycle", type=bool, default=False, help="Use cycle concistency to training")
+    parser.add_argument("--is_use_cycle", type=bool, default=True, help="Use cycle prediction")
 
     parser.add_argument(
         "--accelerator", type=str, default="gpu", help="accelerator instances"
@@ -679,19 +658,6 @@ if __name__ == "__main__":
         help="Strategy controls the model distribution across training",
     )
     parser.add_argument("--precision", type=int, default=32)
-
-    parser.add_argument(
-        "--wandb_tags",
-        type=str,
-        default=None,
-        help="A list of strings, which will populate the list of tags on this run in the UI",
-    )
-    parser.add_argument(
-        "--wandb_name",
-        type=str,
-        default=None,
-        help="A short display name for this run, which is how you'll identify this run in the UI",
-    )
 
     # parser = Trainer.add_argparse_args(parser)
 
@@ -716,6 +682,10 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
+    train_unsup_dirs = [
+        os.path.join(hparams.datadir, "data/VinDR/train/"),
+    ]
+
     val_image_dirs = [
         os.path.join(hparams.datadir, "data/JSRT/processed/images/"),
         os.path.join(hparams.datadir, "data/ChinaSet/processed/images/"),
@@ -728,15 +698,11 @@ if __name__ == "__main__":
         os.path.join(hparams.datadir, "data/Montgomery/processed/labels/"),
     ]
 
-    test_image_dirs = val_image_dirs
-    test_label_dirs = val_label_dirs
-
-    train_unsup_dirs = [
-        os.path.join(hparams.datadir, "data/VinDR/train/"),
-    ]
     val_unsup_dirs = [
         os.path.join(hparams.datadir, "data/VinDR/test/"),
     ]
+    test_image_dirs = val_image_dirs
+    test_label_dirs = val_label_dirs
     test_unsup_dirs = val_unsup_dirs
 
     datamodule = PairedAndUnsupervisedDataModule(
@@ -785,7 +751,6 @@ if __name__ == "__main__":
         every_n_epochs=1,
     )
     lr_callback = LearningRateMonitor(logging_interval="step")
-
     early_stop_callback = EarlyStopping(
         monitor="validation_loss_epoch",  # The quantity to be monitored
         min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
@@ -794,13 +759,7 @@ if __name__ == "__main__":
         mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
     )
     # Logger
-    wandb.init(
-        project="cycle-consistent-DDMM",
-        entity="diffusors",
-        dir=hparams.logsdir,
-        tags=hparams.wandb_tags,
-        name=hparams.wandb_name,
-    )
+    wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
     wandb_logger = WandbLogger(
         save_dir=hparams.logsdir, log_model=True, project="diffusor"
     )
@@ -813,10 +772,10 @@ if __name__ == "__main__":
         callbacks=[
             lr_callback,
             checkpoint_callback,
-            early_stop_callback,
+            early_stop_callback
         ],
         # accumulate_grad_batches=4,
-        strategy=hparams.strategy,  # "fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
+        # strategy=hparams.strategy, #"fsdp", #"ddp_sharded", #"horovod", #"deepspeed", #"ddp_sharded",
         precision=hparams.precision,  # if hparams.use_amp else 32,
         # amp_backend='apex',
         # amp_level='O1', # see https://nvidia.github.io/apex/amp.html#opt-levels
@@ -830,6 +789,7 @@ if __name__ == "__main__":
         # deterministic=False,
         # profiler="simple",
     )
+
     trainer.fit(
         model,
         datamodule,  # ,
@@ -838,12 +798,9 @@ if __name__ == "__main__":
         else None,  # "some/path/to/my_checkpoint.ckpt"
     )
 
-    # trainer.test(
-    #     model,
-    #     datamodule,
-    #     ckpt_path=hparams.ckpt
-    #     if hparams.ckpt is not None
-    #     else None,
-    # )
+    # test
+    trainer.test(
+        model, datamodule, ckpt_path=hparams.ckpt if hparams.ckpt is not None else None
+    )
 
     # serve
