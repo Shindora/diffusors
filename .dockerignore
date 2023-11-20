@@ -1,0 +1,4 @@
+data.zip
+wandb/*
+.vscode
+__pycache__/

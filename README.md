@@ -40,5 +40,16 @@ wandb_logger = WandbLogger()
 ```
 Please replace 'my-project' and 'my-entity' with your actual project and entity names.
 
+3. Build Docker
+
+```dockerfile
+docker build -t root .
+```
+
+```docker
+docker run -it root python segmentation_diffuser_two.py --train_samples 600 --val_samples 100 --test_samples 200 --datadir . --epochs 25 
+--devices 2 --strategy ddp --batch_size 2 --accelerator gpu --logsdir . --precision 16 --wandb_tags diffusion_all
+```
+
 ## License
 MIT
