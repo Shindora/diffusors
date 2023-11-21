@@ -471,7 +471,8 @@ class DDMMLightningModule(LightningModule):
                 ),
             )
 
-        self.loss_func = nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.l1_loss = nn.SmoothL1Loss(reduction="mean", beta=0.02)
+        self.dice_loss = dice_coef_loss
         self.save_hyperparameters()
 
     def _common_step(
@@ -500,22 +501,30 @@ class DDMMLightningModule(LightningModule):
         est_l = self.diffusion_label.forward(mid_l, timesteps).sample
 
         super_loss = (
-                self.loss_func(est_i, rng_p)
-                + self.loss_func(est_l, rng_p)
+                self.l1_loss(est_i, rng_p)
+                + self.l1_loss(est_l, rng_p)
+                + self.l1_loss(est_i, image)
+                + self.l1_loss(est_l, label)
         )
 
         if self.is_use_cycle:
             pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
             pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
             super_loss += (
-                    self.loss_func(pred_image, mid_i)
-                    + self.loss_func(pred_label, mid_l)
+                    self.l1_loss(pred_image, mid_i)
+                    + self.l1_loss(pred_label, mid_l)
+                    + self.l1_loss(pred_image, image)
+                    + self.l1_loss(pred_label, label)
+
             )
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
-        unsup_loss = self.loss_func(est_u, rng_u)
+        unsup_loss = (
+                self.l1_loss(est_u, rng_u)
+                + self.l1_loss(est_u, unsup)
+        )
 
         self.log(
             f"{stage}_super_loss",
