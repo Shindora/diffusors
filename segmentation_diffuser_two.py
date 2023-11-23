@@ -506,21 +506,27 @@ class DDMMLightningModule(LightningModule):
         )
 
         if self.is_use_cycle:
-            pred_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(timesteps)).sample
-            pred_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(timesteps)).sample
+            fake_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(
+                timesteps)).sample #F_il(I)
+            rec_image = self.diffusion_from_label_to_image.forward(fake_label, torch.zeros_like(
+                timesteps)).sample #F_li(F_il(I))
+
+            fake_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(
+                timesteps)).sample #F_li(L)
+            rec_label = self.diffusion_from_image_to_label.forward(fake_image, torch.zeros_like(
+                timesteps)).sample #F_il(F_li(L))
+
             super_loss += (
-                    self.l1_loss(pred_image, image)
-                    + self.l1_loss(pred_label, label)
+                    self.l1_loss(rec_image, image)
+                    + self.l1_loss(rec_label, label)
 
             )
 
         # 2nd pass, unsupervised
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
-        unsup_loss = (
-                self.l1_loss(est_u, rng_u)
-                + self.l1_loss(est_u, unsup)
-        )
+        unsup_loss = self.l1_loss(est_u, rng_u)
+
 
         self.log(
             f"{stage}_super_loss",
