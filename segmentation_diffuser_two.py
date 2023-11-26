@@ -507,14 +507,14 @@ class DDMMLightningModule(LightningModule):
 
         if self.is_use_cycle:
             fake_label = self.diffusion_from_image_to_label.forward(mid_i, torch.zeros_like(
-                timesteps)).sample #F_il(I)
+                timesteps)).sample  # F_il(I)
             rec_image = self.diffusion_from_label_to_image.forward(fake_label, torch.zeros_like(
-                timesteps)).sample #F_li(F_il(I))
+                timesteps)).sample  # F_li(F_il(I))
 
             fake_image = self.diffusion_from_label_to_image.forward(mid_l, torch.zeros_like(
-                timesteps)).sample #F_li(L)
+                timesteps)).sample  # F_li(L)
             rec_label = self.diffusion_from_image_to_label.forward(fake_image, torch.zeros_like(
-                timesteps)).sample #F_il(F_li(L))
+                timesteps)).sample  # F_il(F_li(L))
 
             super_loss += (
                     self.l1_loss(rec_image, image)
@@ -526,7 +526,6 @@ class DDMMLightningModule(LightningModule):
         mid_u = self.noise_scheduler.add_noise(unsup * 2.0 - 1.0, rng_u, timesteps)
         est_u = self.diffusion_image.forward(mid_u, timesteps).sample
         unsup_loss = self.l1_loss(est_u, rng_u)
-
 
         self.log(
             f"{stage}_super_loss",
@@ -567,10 +566,16 @@ class DDMMLightningModule(LightningModule):
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
                 if self.is_use_cycle:
-                    fake_label = self.diffusion_from_image_to_label(image)
-                    rec_image = self.diffusion_from_label_to_image(fake_label)
-                    fake_image = self.diffusion_from_label_to_image(label)
-                    rec_label = self.diffusion_from_image_to_label(fake_image)
+                    fake_label = self.diffusion_from_image_to_label.forward(image, torch.zeros_like(
+                        timesteps))
+                    rec_image = self.diffusion_from_label_to_image.forward(fake_label,
+                                                                           torch.zeros_like(
+                                                                               timesteps))
+                    fake_image = self.diffusion_from_label_to_image.forward(label, torch.zeros_like(
+                        timesteps))
+                    rec_label = self.diffusion_from_image_to_label.forward(fake_image,
+                                                                           torch.zeros_like(
+                                                                               timesteps))
 
                     rec_image = rec_image * 0.5 + 0.5
                     rec_label = rec_label * 0.5 + 0.5
@@ -771,7 +776,8 @@ if __name__ == "__main__":
         min_delta=0.00,  # Minimum change in the monitored quantity to qualify as an improvement
         patience=10,  # Number of epochs with no improvement after which training will be stopped
         verbose=True,  # Whether to print logs in stdout
-        mode="min",  # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
+        mode="min",
+        # In 'min' mode, training will stop when the quantity monitored has stopped decreasing
     )
     # Logger
     wandb.init(project="cycle-consistent-DDMM", entity="diffusors", dir=hparams.logsdir)
