@@ -567,16 +567,15 @@ class DDMMLightningModule(LightningModule):
                 sam_l = sam_l * 0.5 + 0.5
                 if self.is_use_cycle:
                     fake_label = self.diffusion_from_image_to_label.forward(image, torch.zeros_like(
-                        timesteps))
+                        timesteps)).sample
                     rec_image = self.diffusion_from_label_to_image.forward(fake_label,
                                                                            torch.zeros_like(
-                                                                               timesteps))
+                                                                               timesteps)).sample
                     fake_image = self.diffusion_from_label_to_image.forward(label, torch.zeros_like(
-                        timesteps))
+                        timesteps)).sample
                     rec_label = self.diffusion_from_image_to_label.forward(fake_image,
                                                                            torch.zeros_like(
-                                                                               timesteps))
-
+                                                                               timesteps)).sample
                     rec_image = rec_image * 0.5 + 0.5
                     rec_label = rec_label * 0.5 + 0.5
 
