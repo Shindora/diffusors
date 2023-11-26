@@ -558,10 +558,6 @@ class DDMMLightningModule(LightningModule):
                     res_i = self.diffusion_image.forward(sam_i, t).sample
                     res_l = self.diffusion_label.forward(sam_l, t).sample
 
-                    if self.is_use_cycle:
-                        cycle_i = self.diffusion_from_label_to_image(sam_l, t).sample
-                        cycle_l = self.diffusion_from_image_to_label(sam_i, t).sample
-
                     # Update sample with step
                     res_i = res_i.to(device=sam_i.device)
                     res_l = res_l.to(device=sam_l.device)
@@ -570,10 +566,15 @@ class DDMMLightningModule(LightningModule):
 
                 sam_i = sam_i * 0.5 + 0.5
                 sam_l = sam_l * 0.5 + 0.5
+                if self.is_use_cycle:
+                    fake_label = self.diffusion_from_image_to_label(image)
+                    rec_image = self.diffusion_from_label_to_image(fake_label)
+                    fake_image = self.diffusion_from_label_to_image(label)
+                    rec_label = self.diffusion_from_image_to_label(fake_image)
 
             if self.is_use_cycle:
                 viz2d = torch.cat(
-                    [image, label, sam_i, sam_l, cycle_i, cycle_l, unsup], dim=-1
+                    [image, label, sam_i, sam_l, rec_image, rec_label, unsup], dim=-1
                 ).transpose(2, 3)
             else:
                 viz2d = torch.cat(
