@@ -572,6 +572,9 @@ class DDMMLightningModule(LightningModule):
                     fake_image = self.diffusion_from_label_to_image(label)
                     rec_label = self.diffusion_from_image_to_label(fake_image)
 
+                    rec_image = rec_image * 0.5 + 0.5
+                    rec_label = rec_label * 0.5 + 0.5
+
             if self.is_use_cycle:
                 viz2d = torch.cat(
                     [image, label, sam_i, sam_l, rec_image, rec_label, unsup], dim=-1
