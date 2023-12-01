@@ -516,7 +516,7 @@ class DDMMLightningModule(LightningModule):
             rec_label = self.diffusion_from_image_to_label.forward(fake_image, torch.zeros_like(
                 timesteps)).sample  # F_il(F_li(L))
 
-            super_loss += (
+            super_loss += 0.1 * (
                     self.l1_loss(rec_image, image)
                     + self.l1_loss(rec_label, label)
 
